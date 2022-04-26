@@ -8,7 +8,7 @@ Values serialization is made with serde (bincode), so don't forget to use [serde
 
 - [x] Mutex lock
 - [ ] Item encryption
-- [ ] Item expiration
+- [ ] Item TTL
 
 ## Credits
 

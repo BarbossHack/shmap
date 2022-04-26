@@ -5,20 +5,8 @@ use crate::{
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
 use serde::{de::DeserializeOwned, Serialize};
-use serde_derive::{Deserialize, Serialize};
 use sha2::{Digest, Sha224};
 use std::path::Path;
-
-#[derive(Serialize, Deserialize)]
-struct Value<T> {
-    inner: T,
-}
-
-impl<T> Value<T> {
-    fn new(inner: T) -> Self {
-        Value { inner }
-    }
-}
 
 fn sanitize_key<S>(key: S) -> String
 where
@@ -51,9 +39,9 @@ where
         }
     };
 
-    let (inner, _): (Value<T>, usize) =
+    let (value, _): (T, usize) =
         bincode::serde::decode_from_slice(mmap.as_ref(), bincode::config::standard())?;
-    Ok(Some(inner.inner))
+    Ok(Some(value))
 }
 
 pub fn set<S, T>(key: S, value: T) -> Result<(), ShmapError>
@@ -63,7 +51,7 @@ where
 {
     let key = sanitize_key(key);
 
-    let bytes = bincode::serde::encode_to_vec(&Value::new(value), bincode::config::standard())?;
+    let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
 
     let lock = NamedLock::create(&key)?;
     let _guard = lock.lock()?;
@@ -130,6 +118,19 @@ mod tests {
         assert_eq!(ret_value, value);
 
         let ret_value: String = get(&key).unwrap().unwrap();
+        assert_eq!(ret_value, value);
+
+        remove(&key).unwrap();
+
+        let key = rand_string(10);
+        let value = vec!["Test".to_string(), "Vec".to_string()];
+
+        set(&key, value.to_owned()).unwrap();
+
+        let ret_value: Vec<String> = get(&key).unwrap().unwrap();
+        assert_eq!(ret_value, value);
+
+        let ret_value: Vec<String> = get(&key).unwrap().unwrap();
         assert_eq!(ret_value, value);
 
         remove(&key).unwrap();
