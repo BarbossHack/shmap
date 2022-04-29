@@ -10,6 +10,12 @@ use std::path::Path;
 
 pub struct Shmap {}
 
+impl Default for Shmap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Shmap {
     pub fn new() -> Self {
         Shmap {}

@@ -10,7 +10,7 @@ Values serialization is made with serde (bincode), so don't forget to use [serde
 use shmap::{Shmap, ShmapError};
 
 fn main() -> Result<(), ShmapError> {
-    let shmap = Shmap::new();
+    let shmap = Shmap::default();
 
     shmap.set("key", "value")?;
     let value = shmap.get("key")?;
