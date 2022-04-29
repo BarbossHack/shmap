@@ -7,14 +7,16 @@ Values serialization is made with serde (bincode), so don't forget to use [serde
 ## Example
 
 ```rust
-use shmap::Shmap;
+use shmap::{Shmap, ShmapError};
 
-fn main() {
+fn main() -> Result<(), ShmapError> {
     let shmap = Shmap::new();
 
-    shmap.set("key", "value").unwrap();
-    let value = shmap.get("key").unwrap();
-    assert_eq!(value, Some("value".to_string()));
+    shmap.set("key", "value")?;
+    let value = shmap.get("key")?;
+    assert_eq!(Some("value".to_string()), value);
+
+    Ok(())
 }
 ```
 
