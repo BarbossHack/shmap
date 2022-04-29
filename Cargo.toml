@@ -1,7 +1,14 @@
 [package]
 authors = ["BarbossHack <barbossh4ck@protonmail.com>"]
+categories = ["database-implementations", "concurrency", "data-structures", "caching"]
+description = "A key-value store based on unix shared-memory files (shm) for persisting state across program restarts."
 edition = "2021"
+homepage = "https://github.com/BarbossHack/shmap"
+keywords = ["shm", "shared-memory", "inter-process", "cross-process", "store", "ramfs"]
+license = "MIT OR Apache-2.0"
 name = "shmap"
+readme = "README.md"
+repository = "https://github.com/BarbossHack/shmap"
 version = "0.1.0"
 
 [dependencies]
@@ -9,7 +16,7 @@ version = "0.1.0"
 bincode = {version = "2.0.0-rc", features = ["serde"]}
 libc = "0.2"
 memmap2 = "0.5"
-named-lock = "0.1"
+named-lock = "0.2"
 serde = "1.0"
 sha2 = "0.10"
 thiserror = "1.0"
