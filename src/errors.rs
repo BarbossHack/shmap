@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ShmapError {
-    #[error("shm_open failed, may not exists: {:?}", _0)]
+    #[error("shm_open failed, may not exists: {}", _0)]
     ShmOpenFailed(i32),
 
     #[error("shm_truncate failed: {}", _0)]

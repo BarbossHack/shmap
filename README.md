@@ -7,6 +7,7 @@ Values serialization is made with serde (bincode), so don't forget to use [serde
 ## Todo
 
 - [x] Mutex lock
+- [ ] Inter-process RwLock
 - [ ] Item encryption
 - [ ] Item TTL
 

@@ -15,9 +15,8 @@ impl Shmap {
         Shmap {}
     }
 
-    pub fn get<S, T>(&self, key: S) -> Result<Option<T>, ShmapError>
+    pub fn get<T>(&self, key: &str) -> Result<Option<T>, ShmapError>
     where
-        S: AsRef<str>,
         T: DeserializeOwned,
     {
         let key = sanitize_key(key);
@@ -42,9 +41,8 @@ impl Shmap {
         Ok(Some(value))
     }
 
-    pub fn set<S, T>(&self, key: S, value: T) -> Result<(), ShmapError>
+    pub fn set<T>(&self, key: &str, value: T) -> Result<(), ShmapError>
     where
-        S: AsRef<str>,
         T: Serialize,
     {
         let key = sanitize_key(key);
@@ -70,10 +68,7 @@ impl Shmap {
         Ok(())
     }
 
-    pub fn remove<S>(&self, key: S) -> Result<(), ShmapError>
-    where
-        S: AsRef<str>,
-    {
+    pub fn remove(&self, key: &str) -> Result<(), ShmapError> {
         let key = sanitize_key(key);
 
         let lock = NamedLock::create(&key)?;
@@ -85,11 +80,8 @@ impl Shmap {
     }
 }
 
-fn sanitize_key<S>(key: S) -> String
-where
-    S: AsRef<str>,
-{
+fn sanitize_key(key: &str) -> String {
     let mut hasher = Sha224::new();
-    hasher.update(key.as_ref());
+    hasher.update(key);
     format!("sham.{:x}", hasher.finalize())
 }
