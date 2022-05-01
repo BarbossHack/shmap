@@ -25,4 +25,7 @@ pub enum ShmapError {
 
     #[error("NamedLockError: {}", _0)]
     NamedLockError(#[from] named_lock::Error),
+
+    #[error("DurationOutOfRangeError")]
+    DurationOutOfRangeError,
 }

@@ -1,4 +1,5 @@
 mod errors;
+mod index;
 mod map;
 mod shm;
 #[cfg(test)]

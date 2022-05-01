@@ -30,8 +30,14 @@ fn shm_open(name: &str, flags: i32) -> Result<i32, ShmapError> {
 pub fn shm_unlink(name: &str) -> Result<(), ShmapError> {
     let name = std::ffi::CString::new(name)?;
     let ret = unsafe { libc::shm_unlink(name.as_ptr()) };
+
     if ret != 0 {
-        Err(ShmapError::ShmUnlinkFailed(ret))
+        let err = std::io::Error::last_os_error();
+        if err.kind() == std::io::ErrorKind::NotFound {
+            Ok(())
+        } else {
+            Err(ShmapError::ShmUnlinkFailed(ret))
+        }
     } else {
         Ok(())
     }
