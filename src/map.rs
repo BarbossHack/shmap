@@ -33,18 +33,18 @@ impl Shmap {
         let lock = NamedLock::create(&sanitized_key)?;
         let guard = lock.lock()?;
 
-        let mmap = match || -> Result<Mmap, ShmapError> {
-            let fd = shm_open_read(&sanitized_key)?;
-            let mmap = unsafe { Mmap::map(fd) }?;
-            Ok(mmap)
-        }() {
-            Ok(mmap) => mmap,
-            Err(_) => {
-                drop(guard);
-                let _ = self.remove(&sanitized_key);
-                return Ok(None);
-            }
+        let fd = match shm_open_read(&sanitized_key) {
+            Ok(fd) => fd,
+            Err(e) => match e {
+                ShmapError::ShmNotFound => {
+                    drop(guard);
+                    let _ = self.remove(&sanitized_key);
+                    return Ok(None);
+                }
+                e => return Err(e),
+            },
         };
+        let mmap = unsafe { Mmap::map(fd) }?;
 
         let (value, _): (T, usize) =
             bincode::serde::decode_from_slice(mmap.as_ref(), bincode::config::standard())?;

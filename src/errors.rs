@@ -2,14 +2,17 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ShmapError {
-    #[error("shm_open failed, may not exists: {}", _0)]
-    ShmOpenFailed(i32),
+    #[error("shm_open failed")]
+    ShmOpenFailed,
 
     #[error("shm_truncate failed: {}", _0)]
     ShmTruncatFailed(i32),
 
-    #[error("shm_unlink failed: {}", _0)]
-    ShmUnlinkFailed(i32),
+    #[error("shm_unlink failed")]
+    ShmUnlinkFailed,
+
+    #[error("shm file not found")]
+    ShmNotFound,
 
     #[error("CStringNulError: {}", _0)]
     CStringNulError(#[from] std::ffi::NulError),
