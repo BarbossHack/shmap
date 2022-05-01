@@ -38,7 +38,7 @@ impl Shmap {
             Err(e) => match e {
                 ShmapError::ShmNotFound => {
                     drop(guard);
-                    let _ = self.remove(&sanitized_key);
+                    let _ = self.remove(&key);
                     return Ok(None);
                 }
                 e => return Err(e),
@@ -85,7 +85,7 @@ impl Shmap {
             Ok(_) => {}
             Err(e) => {
                 drop(guard);
-                let _ = self.remove(&sanitized_key);
+                let _ = self.remove(&key);
                 return Err(e);
             }
         };
