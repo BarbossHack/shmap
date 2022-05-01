@@ -12,8 +12,9 @@ use shmap::{Shmap, ShmapError};
 fn main() -> Result<(), ShmapError> {
     let shmap = Shmap::default();
 
-    shmap.set("key", "value")?;
+    shmap.insert("key", "value")?;
     let value = shmap.get("key")?;
+
     assert_eq!(Some("value".to_string()), value);
 
     Ok(())
