@@ -1,6 +1,6 @@
 use crate::{
     errors::ShmapError,
-    index::Index,
+    metadata::Metadata,
     shm::{shm_open_read, shm_open_write, shm_unlink},
 };
 use chrono::Utc;
@@ -10,7 +10,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha224};
 use std::{collections::HashMap, path::Path, time::Duration};
 
-const INDEX_KEY: &str = "shmap_internal_index";
+const METADATAS_KEY: &str = "shmap_internal_index";
 
 pub struct Shmap {}
 
@@ -88,8 +88,8 @@ impl Shmap {
         };
         drop(guard);
 
-        if key.ne(INDEX_KEY) {
-            self.insert_index(&key, Index::new(ttl)?)?;
+        if key.ne(METADATAS_KEY) {
+            self.insert_metadata(&key, Metadata::new(ttl)?)?;
         }
 
         Ok(())
@@ -101,8 +101,8 @@ impl Shmap {
         let lock = NamedLock::create(&sanitized_key)?;
         let _guard = lock.lock()?;
 
-        if key.ne(INDEX_KEY) {
-            self.remove_index(&key)?;
+        if key.ne(METADATAS_KEY) {
+            self.remove_metadata(&key)?;
         }
 
         let _ = std::fs::remove_file(Path::new("/tmp").join(format!("{}.lock", &sanitized_key)));
@@ -115,35 +115,30 @@ impl Shmap {
         Ok(self.get(INDEX_KEY)?)
     }
 
-    fn insert_index(&self, key: &str, index: Index) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(INDEX_KEY)?;
+    fn insert_metadata(&self, key: &str, index: Metadata) -> Result<(), ShmapError> {
+        let lock = NamedLock::create(METADATAS_KEY)?;
         let _guard = lock.lock()?;
 
-        let mut indexes = match self.get_indexes()? {
-            Some(indexes) => indexes,
+        let mut metadatas = match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
+            Some(metadatas) => metadatas,
             None => {
-                let indexes = HashMap::new();
-                indexes
+                let metadatas = HashMap::new();
+                metadatas
             }
         };
-        indexes.insert(key.to_string(), index);
-        self.set_indexes(indexes)?;
+        metadatas.insert(key.to_string(), index);
+        self.insert(METADATAS_KEY, metadatas)?;
         Ok(())
     }
 
-    fn set_indexes(&self, indexes: HashMap<String, Index>) -> Result<(), ShmapError> {
-        self.insert(INDEX_KEY, indexes)?;
-        Ok(())
-    }
-
-    fn remove_index(&self, key: &str) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(INDEX_KEY)?;
+    fn remove_metadata(&self, key: &str) -> Result<(), ShmapError> {
+        let lock = NamedLock::create(METADATAS_KEY)?;
         let _guard = lock.lock()?;
 
-        match self.get_indexes()? {
-            Some(mut indexes) => {
-                indexes.remove(key);
-                self.set_indexes(indexes)?;
+        match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
+            Some(mut metadatas) => {
+                metadatas.remove(key);
+                self.insert(METADATAS_KEY, metadatas)?;
             }
             None => {}
         }
@@ -152,30 +147,30 @@ impl Shmap {
 
     /// Clean expired items
     pub fn clean(&self) -> Result<(), ShmapError> {
-        if let Some(indexes) = self.get_indexes()? {
-            let lock = NamedLock::create(INDEX_KEY)?;
+        if let Some(metadatas) = self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
+            let lock = NamedLock::create(METADATAS_KEY)?;
             let guard = lock.lock()?;
 
-            let mut indexes_to_remove: Vec<String> = Vec::new();
+            let mut items_to_remove: Vec<String> = Vec::new();
 
-            let indexes_to_keep: HashMap<String, Index> = indexes
+            let items_to_keep: HashMap<String, Metadata> = metadatas
                 .into_iter()
                 .filter(|(key, index)| match index.expiration {
                     Some(expiration) => {
                         let keep = Utc::now().le(&expiration);
                         if !keep {
-                            indexes_to_remove.push(key.to_string());
+                            items_to_remove.push(key.to_string());
                         }
                         keep
                     }
                     None => true,
                 })
                 .collect();
-            self.set_indexes(indexes_to_keep)?;
+            self.insert(METADATAS_KEY, items_to_keep)?;
 
             drop(guard);
 
-            indexes_to_remove.into_iter().for_each(|key| {
+            items_to_remove.into_iter().for_each(|key| {
                 let _ = self.remove(&key);
             });
         }
@@ -191,21 +186,28 @@ fn sanitize_key(key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests::map::rand_string, Shmap};
+    use crate::{map::METADATAS_KEY, metadata::Metadata, tests::map::rand_string, Shmap};
+    use std::collections::HashMap;
 
     #[test]
-    fn test_indexes_presence() {
+    fn test_metadatas_presence() {
         let shmap = Shmap::new().unwrap();
         let key = rand_string(10);
         let value = rand_string(50);
 
         shmap.insert(&key, value).unwrap();
-        let indexes = shmap.get_indexes().unwrap().unwrap();
-        assert!(indexes.contains_key(&key));
+        let metadatas = shmap
+            .get::<HashMap<String, Metadata>>(METADATAS_KEY)
+            .unwrap()
+            .unwrap();
+        assert!(metadatas.contains_key(&key));
 
         let shmap = Shmap::new().unwrap();
         shmap.remove(&key).unwrap();
-        let indexes = shmap.get_indexes().unwrap().unwrap();
-        assert!(!indexes.contains_key(&key));
+        let metadatas = shmap
+            .get::<HashMap<String, Metadata>>(METADATAS_KEY)
+            .unwrap()
+            .unwrap();
+        assert!(!metadatas.contains_key(&key));
     }
 }

@@ -4,11 +4,11 @@ use serde_derive::{Deserialize, Serialize};
 use crate::ShmapError;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Index {
+pub struct Metadata {
     pub expiration: Option<DateTime<Utc>>,
 }
 
-impl Index {
+impl Metadata {
     pub fn new(ttl: Option<std::time::Duration>) -> Result<Self, ShmapError> {
         let expiration = match ttl {
             Some(ttl) => Some(
@@ -19,6 +19,6 @@ impl Index {
             None => None,
         };
 
-        Ok(Index { expiration })
+        Ok(Metadata { expiration })
     }
 }

@@ -1,6 +1,6 @@
 mod errors;
-mod index;
 mod map;
+mod metadata;
 mod shm;
 #[cfg(test)]
 mod tests;

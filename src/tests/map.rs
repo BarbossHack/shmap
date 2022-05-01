@@ -102,135 +102,109 @@ fn test_expiration() {
     let key = rand_string(10);
     let value = rand_string(50);
 
-    // We sleep because some other tests may interfer (if another test is runned 2 seconds after this one)
-    std::thread::sleep(Duration::from_secs(1));
-
     shmap
-        .insert_with_ttl(&key, value.to_owned(), Duration::from_secs(2))
+        .insert_with_ttl(&key, value.to_owned(), Duration::from_secs(1))
         .unwrap();
     shmap.clean().unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
-    std::thread::sleep(Duration::from_secs(3));
+    std::thread::sleep(Duration::from_secs(2));
 
     let shmap = Shmap::new().unwrap();
     let _: String = shmap.get(&key).unwrap().unwrap();
 }
 
-// test_namedlock_set_1() and test_namedlock_set_2() may fail (as run in parallel) without a proper
-// inter process Lock (named_lock here)
+// test concurrency between set
 #[test]
-fn test_namedlock_set_1() {
+fn test_set_concurrency() {
     let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_set";
+    let key = rand_string(10);
+    let key_clone = key.clone();
 
-    for i in 0..1024 {
-        let value = rand_string(i);
-        shmap.insert(key, value).unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
+    let task = move || {
+        for i in 0..1024 {
+            let value = rand_string(i);
+            shmap.insert(&key, value).unwrap();
+        }
+    };
+
+    let t1 = std::thread::spawn(task.clone());
+    let t2 = std::thread::spawn(task);
+
+    t1.join().unwrap();
+    t2.join().unwrap();
+
+    shmap.remove(&key_clone).unwrap();
 }
 
+// test concurrency between get
 #[test]
-fn test_namedlock_set_2() {
+fn test_get_concurrency() {
     let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_set";
-
-    for i in 0..1024 {
-        let value = rand_string(i);
-        shmap.insert(key, value).unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
-}
-
-// test_namedlock_get_1() and test_namedlock_get_2() should not fail even with inter process Lock
-// if there is no set()
-#[test]
-fn test_namedlock_get_1() {
-    let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_get";
+    let key = rand_string(10);
     let value = rand_string(50);
-    shmap.insert(key, value.to_owned()).unwrap();
+    let key_clone = key.clone();
 
-    std::thread::sleep(Duration::from_millis(100));
+    shmap.insert(&key, value).unwrap();
 
-    for _ in 0..1024 {
-        let _: String = shmap.get(key).unwrap().unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
+    let task = move || {
+        for _ in 0..1024 {
+            let _: String = shmap.get(&key).unwrap().unwrap();
+        }
+    };
+
+    let t1 = std::thread::spawn(task.clone());
+    let t2 = std::thread::spawn(task);
+
+    t1.join().unwrap();
+    t2.join().unwrap();
+
+    shmap.remove(&key_clone).unwrap();
 }
 
+// test concurrency between set and get
 #[test]
-fn test_namedlock_get_2() {
+fn test_get_set_concurrency() {
     let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_get";
-    let value = rand_string(50);
-    shmap.insert(key, value.to_owned()).unwrap();
+    let key = rand_string(10);
+    let key_clone = key.clone();
 
-    std::thread::sleep(Duration::from_millis(100));
+    let task = move || {
+        for i in 0..1024 {
+            let value = rand_string(i);
+            shmap.insert(&key, value.to_owned()).unwrap();
+            let _: String = shmap.get(&key).unwrap().unwrap();
+        }
+    };
 
-    for _ in 0..1024 {
-        let _: String = shmap.get(key).unwrap().unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
+    let t1 = std::thread::spawn(task.clone());
+    let t2 = std::thread::spawn(task);
+
+    t1.join().unwrap();
+    t2.join().unwrap();
+
+    shmap.remove(&key_clone).unwrap();
 }
 
-// test_namedlock_get_set_1() and test_namedlock_get_set_2() may fail (as run in parallel) without a proper
-// inter process Lock (named_lock here), in set() AND get()
+// test concurrency with metadatas set/remove
 #[test]
-fn test_namedlock_get_set_1() {
-    let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_get_set";
+fn test_metadatas_concurrency() {
+    let key = rand_string(10);
 
-    for i in 0..1024 {
-        let value = rand_string(i);
-        shmap.insert(key, value.to_owned()).unwrap();
-        let _: String = shmap.get(key).unwrap().unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
-}
+    let task = move || {
+        for i in 0..1024 {
+            let shmap = Shmap::new().unwrap();
+            let value = rand_string(i);
+            shmap.insert(&key, value.to_owned()).unwrap();
+            let _: Option<String> = shmap.get(&key).unwrap();
+            shmap.remove(&key).unwrap();
+        }
+    };
 
-#[test]
-fn test_namedlock_get_set_2() {
-    let shmap = Shmap::new().unwrap();
-    let key = "test_namedlock_get_set";
+    let t1 = std::thread::spawn(task.clone());
+    let t2 = std::thread::spawn(task);
 
-    for i in 0..1024 {
-        let value = rand_string(i);
-        shmap.insert(key, value.to_owned()).unwrap();
-        let _: String = shmap.get(key).unwrap().unwrap();
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    let _ = shmap.remove(&key);
-}
-
-// test concurrency with indexes set/remove
-#[test]
-fn test_indexes_concurrency_1() {
-    let key = "test_indexes_concurrency";
-
-    for i in 0..1024 {
-        let shmap = Shmap::new().unwrap();
-        let value = rand_string(i);
-        shmap.insert(key, value.to_owned()).unwrap();
-        shmap.remove(key).unwrap();
-    }
-}
-
-#[test]
-fn test_indexes_concurrency_2() {
-    let key = "test_indexes_concurrency";
-
-    for i in 0..1024 {
-        let shmap = Shmap::new().unwrap();
-        let value = rand_string(i);
-        shmap.insert(key, value.to_owned()).unwrap();
-        shmap.remove(key).unwrap();
-    }
+    t1.join().unwrap();
+    t2.join().unwrap();
 }
