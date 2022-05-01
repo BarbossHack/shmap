@@ -3,6 +3,7 @@ use crate::{
     index::Index,
     shm::{shm_open_read, shm_open_write, shm_unlink},
 };
+use chrono::Utc;
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
 use serde::{de::DeserializeOwned, Serialize};
@@ -13,15 +14,11 @@ const INDEX_KEY: &str = "shmap_internal_index";
 
 pub struct Shmap {}
 
-impl Default for Shmap {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Shmap {
-    pub fn new() -> Self {
-        Shmap {}
+    pub fn new() -> Result<Self, ShmapError> {
+        let shmap = Shmap {};
+        shmap.clean()?;
+        Ok(shmap)
     }
 
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, ShmapError>
@@ -152,6 +149,38 @@ impl Shmap {
         }
         Ok(())
     }
+
+    /// Clean expired items
+    pub fn clean(&self) -> Result<(), ShmapError> {
+        if let Some(indexes) = self.get_indexes()? {
+            let lock = NamedLock::create(INDEX_KEY)?;
+            let guard = lock.lock()?;
+
+            let mut indexes_to_remove: Vec<String> = Vec::new();
+
+            let indexes_to_keep: HashMap<String, Index> = indexes
+                .into_iter()
+                .filter(|(key, index)| match index.expiration {
+                    Some(expiration) => {
+                        let keep = Utc::now().le(&expiration);
+                        if !keep {
+                            indexes_to_remove.push(key.to_string());
+                        }
+                        keep
+                    }
+                    None => true,
+                })
+                .collect();
+            self.set_indexes(indexes_to_keep)?;
+
+            drop(guard);
+
+            indexes_to_remove.into_iter().for_each(|key| {
+                let _ = self.remove(&key);
+            });
+        }
+        Ok(())
+    }
 }
 
 fn sanitize_key(key: &str) -> String {
@@ -165,8 +194,8 @@ mod tests {
     use crate::{tests::map::rand_string, Shmap};
 
     #[test]
-    fn test_indexes() {
-        let shmap = Shmap::new();
+    fn test_indexes_presence() {
+        let shmap = Shmap::new().unwrap();
         let key = rand_string(10);
         let value = rand_string(50);
 
@@ -174,6 +203,7 @@ mod tests {
         let indexes = shmap.get_indexes().unwrap().unwrap();
         assert!(indexes.contains_key(&key));
 
+        let shmap = Shmap::new().unwrap();
         shmap.remove(&key).unwrap();
         let indexes = shmap.get_indexes().unwrap().unwrap();
         assert!(!indexes.contains_key(&key));

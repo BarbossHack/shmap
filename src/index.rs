@@ -3,9 +3,9 @@ use serde_derive::{Deserialize, Serialize};
 
 use crate::ShmapError;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Index {
-    expiration: Option<DateTime<Utc>>,
+    pub expiration: Option<DateTime<Utc>>,
 }
 
 impl Index {
