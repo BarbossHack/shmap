@@ -23,7 +23,7 @@ fn main() -> Result<(), ShmapError> {
 
 ## Todo
 
-- [x] Mutex lock
+- [x] Inter-process Mutex
 - [ ] Inter-process RwLock
 - [ ] Item encryption
 - [ ] Item TTL

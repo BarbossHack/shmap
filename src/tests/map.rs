@@ -2,7 +2,7 @@ use crate::Shmap;
 use rand::{distributions::Alphanumeric, Rng};
 use std::time::Duration;
 
-fn rand_string(len: usize) -> String {
+pub fn rand_string(len: usize) -> String {
     rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(len)
@@ -83,7 +83,7 @@ fn test_remove() {
     let key = rand_string(10);
     let value = rand_string(50);
 
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value).unwrap();
 
     shmap.remove(&key).unwrap();
 }
@@ -187,7 +187,7 @@ fn test_namedlock_get_set_2() {
     let _ = shmap.remove(&key);
 }
 
-// test concurrency with
+// test concurrency with indexes set/remove
 #[test]
 fn test_indexes_concurrency_1() {
     let key = "test_indexes_concurrency";

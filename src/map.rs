@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha224};
 use std::{collections::HashMap, path::Path, time::Duration};
 
-const INDEX_KEY: &str = "indexes";
+const INDEX_KEY: &str = "shmap_internal_index";
 
 pub struct Shmap {}
 
@@ -92,7 +92,7 @@ impl Shmap {
         drop(guard);
 
         if key.ne(INDEX_KEY) {
-            self.insert_index(&sanitized_key, Index::new(ttl)?)?;
+            self.insert_index(&key, Index::new(ttl)?)?;
         }
 
         Ok(())
@@ -105,7 +105,7 @@ impl Shmap {
         let _guard = lock.lock()?;
 
         if key.ne(INDEX_KEY) {
-            self.remove_index(&sanitized_key)?;
+            self.remove_index(&key)?;
         }
 
         let _ = std::fs::remove_file(Path::new("/tmp").join(format!("{}.lock", &sanitized_key)));
@@ -122,14 +122,14 @@ impl Shmap {
         let lock = NamedLock::create(INDEX_KEY)?;
         let _guard = lock.lock()?;
 
-        let indexes = match self.get_indexes()? {
+        let mut indexes = match self.get_indexes()? {
             Some(indexes) => indexes,
             None => {
-                let mut indexes = HashMap::new();
-                indexes.insert(key.to_string(), index);
+                let indexes = HashMap::new();
                 indexes
             }
         };
+        indexes.insert(key.to_string(), index);
         self.set_indexes(indexes)?;
         Ok(())
     }
@@ -158,4 +158,24 @@ fn sanitize_key(key: &str) -> String {
     let mut hasher = Sha224::new();
     hasher.update(key);
     format!("sham.{:x}", hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{tests::map::rand_string, Shmap};
+
+    #[test]
+    fn test_indexes() {
+        let shmap = Shmap::new();
+        let key = rand_string(10);
+        let value = rand_string(50);
+
+        shmap.insert(&key, value).unwrap();
+        let indexes = shmap.get_indexes().unwrap().unwrap();
+        assert!(indexes.contains_key(&key));
+
+        shmap.remove(&key).unwrap();
+        let indexes = shmap.get_indexes().unwrap().unwrap();
+        assert!(!indexes.contains_key(&key));
+    }
 }
