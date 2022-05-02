@@ -8,14 +8,16 @@ Values serialization is made with serde (bincode), so don't forget to use [serde
 
 ```rust
 use shmap::{Shmap, ShmapError};
+use std::time::Duration;
 
 fn main() -> Result<(), ShmapError> {
     let shmap = Shmap::new()?;
 
     shmap.insert("key", "value")?;
     let value = shmap.get("key")?;
-
     assert_eq!(Some("value".to_string()), value);
+
+    shmap.insert_with_ttl("key", "temporary_value", Duration::from_secs(60))?;
 
     Ok(())
 }
@@ -26,7 +28,7 @@ fn main() -> Result<(), ShmapError> {
 - [x] Inter-process Mutex
 - [ ] Inter-process RwLock
 - [ ] Item encryption
-- [ ] Item TTL
+- [x] Item TTL
 
 ## Credits
 

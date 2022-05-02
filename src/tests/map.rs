@@ -111,7 +111,6 @@ fn test_expiration() {
 
     std::thread::sleep(Duration::from_millis(300));
 
-    let shmap = Shmap::new().unwrap();
     let _: String = shmap.get(&key).unwrap().unwrap();
 }
 

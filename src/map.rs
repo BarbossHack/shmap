@@ -12,20 +12,6 @@ use std::{collections::HashMap, path::Path, time::Duration};
 
 const METADATAS_KEY: &str = "shmap_internal_index";
 
-// FIXME: can't work like this...
-// user 1 get the index
-// user 2 get the index
-// user 1 modify it
-// user 1 update it
-// user 2 modify it
-// user 2 update it
-
-// user 1 updates are lost
-
-// should do a "per item" index (Metadata)
-// and find a way to search for all items on the disk, because we won't have a way to safely store a list of these items
-// or can we
-
 #[derive(Clone, Copy)]
 pub struct Shmap {}
 
@@ -40,16 +26,18 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
-        // TODO: check expiration before return
-        // but for performance purpose, should find a way to get the expiration time
-        // without locking the whole index
-        // ... or wait for rwlock ? yes
-        /*if key.ne(INDEX_KEY) {
-            let not_found = match self.get_index(key)? {
+        let sanitized_key = sanitize_key(key);
+
+        // Remove item if expired
+        if key.ne(METADATAS_KEY) {
+            let not_found = match self.get_metadata(key)? {
                 Some(index) => match index.expiration {
                     Some(expiration) => {
-                        let _ = self.remove(key);
-                        Utc::now().gt(&expiration)
+                        let expired = Utc::now().gt(&expiration);
+                        if expired {
+                            let _ = self.remove(key);
+                        }
+                        expired
                     }
                     None => false,
                 },
@@ -58,9 +46,7 @@ impl Shmap {
             if not_found {
                 return Ok(None);
             }
-        }*/
-
-        let sanitized_key = sanitize_key(key);
+        }
 
         let lock = NamedLock::create(&sanitized_key)?;
         let guard = lock.lock()?;
@@ -70,7 +56,7 @@ impl Shmap {
             Err(e) => match e {
                 ShmapError::ShmNotFound => {
                     drop(guard);
-                    let _ = self.remove(&key);
+                    let _ = self.remove(key);
                     return Ok(None);
                 }
                 e => return Err(e),
@@ -117,14 +103,14 @@ impl Shmap {
             Ok(_) => {}
             Err(e) => {
                 drop(guard);
-                let _ = self.remove(&key);
+                let _ = self.remove(key);
                 return Err(e);
             }
         };
         drop(guard);
 
         if key.ne(METADATAS_KEY) {
-            self.insert_metadata(&key, Metadata::new(ttl)?)?;
+            self.insert_metadata(key, Metadata::new(ttl)?)?;
         }
 
         Ok(())
@@ -137,7 +123,7 @@ impl Shmap {
         let _guard = lock.lock()?;
 
         if key.ne(METADATAS_KEY) {
-            self.remove_metadata(&key)?;
+            self.remove_metadata(key)?;
         }
 
         let _ = std::fs::remove_file(Path::new("/tmp").join(format!("{}.lock", &sanitized_key)));
@@ -146,7 +132,10 @@ impl Shmap {
         Ok(())
     }
 
-    /*fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
+    fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
+        let lock = NamedLock::create(METADATAS_KEY)?;
+        let _guard = lock.lock()?;
+
         match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
             Some(metadatas) => match metadatas.get(key) {
                 Some(index) => Ok(Some(index.clone())),
@@ -154,7 +143,7 @@ impl Shmap {
             },
             None => Ok(None),
         }
-    }*/
+    }
 
     fn insert_metadata(&self, key: &str, index: Metadata) -> Result<(), ShmapError> {
         let lock = NamedLock::create(METADATAS_KEY)?;
@@ -162,10 +151,7 @@ impl Shmap {
 
         let mut metadatas = match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
             Some(metadatas) => metadatas,
-            None => {
-                let metadatas = HashMap::new();
-                metadatas
-            }
+            None => HashMap::new(),
         };
         metadatas.insert(key.to_string(), index);
         self.insert(METADATAS_KEY, metadatas)?;
