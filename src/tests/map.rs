@@ -103,13 +103,13 @@ fn test_expiration() {
     let value = rand_string(50);
 
     shmap
-        .insert_with_ttl(&key, value.to_owned(), Duration::from_secs(1))
+        .insert_with_ttl(&key, value.to_owned(), Duration::from_millis(200))
         .unwrap();
     shmap.clean().unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_millis(300));
 
     let shmap = Shmap::new().unwrap();
     let _: String = shmap.get(&key).unwrap().unwrap();

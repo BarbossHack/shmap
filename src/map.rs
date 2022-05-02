@@ -12,6 +12,21 @@ use std::{collections::HashMap, path::Path, time::Duration};
 
 const METADATAS_KEY: &str = "shmap_internal_index";
 
+// FIXME: can't work like this...
+// user 1 get the index
+// user 2 get the index
+// user 1 modify it
+// user 1 update it
+// user 2 modify it
+// user 2 update it
+
+// user 1 updates are lost
+
+// should do a "per item" index (Metadata)
+// and find a way to search for all items on the disk, because we won't have a way to safely store a list of these items
+// or can we
+
+#[derive(Clone, Copy)]
 pub struct Shmap {}
 
 impl Shmap {
@@ -25,6 +40,26 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
+        // TODO: check expiration before return
+        // but for performance purpose, should find a way to get the expiration time
+        // without locking the whole index
+        // ... or wait for rwlock ? yes
+        /*if key.ne(INDEX_KEY) {
+            let not_found = match self.get_index(key)? {
+                Some(index) => match index.expiration {
+                    Some(expiration) => {
+                        let _ = self.remove(key);
+                        Utc::now().gt(&expiration)
+                    }
+                    None => false,
+                },
+                None => true,
+            };
+            if not_found {
+                return Ok(None);
+            }
+        }*/
+
         let sanitized_key = sanitize_key(key);
 
         let lock = NamedLock::create(&sanitized_key)?;
@@ -111,9 +146,15 @@ impl Shmap {
         Ok(())
     }
 
-    fn get_indexes(&self) -> Result<Option<HashMap<String, Index>>, ShmapError> {
-        Ok(self.get(INDEX_KEY)?)
-    }
+    /*fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
+        match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
+            Some(metadatas) => match metadatas.get(key) {
+                Some(index) => Ok(Some(index.clone())),
+                None => Ok(None),
+            },
+            None => Ok(None),
+        }
+    }*/
 
     fn insert_metadata(&self, key: &str, index: Metadata) -> Result<(), ShmapError> {
         let lock = NamedLock::create(METADATAS_KEY)?;
@@ -147,10 +188,10 @@ impl Shmap {
 
     /// Clean expired items
     pub fn clean(&self) -> Result<(), ShmapError> {
-        if let Some(metadatas) = self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
-            let lock = NamedLock::create(METADATAS_KEY)?;
-            let guard = lock.lock()?;
+        let lock = NamedLock::create(METADATAS_KEY)?;
+        let guard = lock.lock()?;
 
+        if let Some(metadatas) = self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
             let mut items_to_remove: Vec<String> = Vec::new();
 
             let items_to_keep: HashMap<String, Metadata> = metadatas
