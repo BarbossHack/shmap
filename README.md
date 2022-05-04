@@ -30,7 +30,3 @@ fn main() -> Result<(), ShmapError> {
 - [ ] Item encryption
 - [x] Item TTL
 - [ ] Open fewer file descriptors
-
-## Credits
-
-shm module is inspired by [shmemfdrs](https://crates.io/crates/shmemfdrs)

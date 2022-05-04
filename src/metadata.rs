@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
 
 use crate::ShmapError;
 
