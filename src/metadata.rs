@@ -5,11 +5,13 @@ use crate::ShmapError;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metadata {
+    pub key: String,
     pub expiration: Option<DateTime<Utc>>,
+    pub encrypted: bool,
 }
 
 impl Metadata {
-    pub fn new(ttl: Option<std::time::Duration>) -> Result<Self, ShmapError> {
+    pub fn new(key: &str, ttl: Option<std::time::Duration>) -> Result<Self, ShmapError> {
         let expiration = match ttl {
             Some(ttl) => Some(
                 Utc::now()
@@ -19,6 +21,10 @@ impl Metadata {
             None => None,
         };
 
-        Ok(Metadata { expiration })
+        Ok(Metadata {
+            key: key.to_owned(),
+            expiration,
+            encrypted: false,
+        })
     }
 }

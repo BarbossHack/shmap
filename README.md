@@ -29,6 +29,7 @@ fn main() -> Result<(), ShmapError> {
 - [ ] Inter-process RwLock
 - [ ] Item encryption
 - [x] Item TTL
+- [ ] Open fewer file descriptors
 
 ## Credits
 

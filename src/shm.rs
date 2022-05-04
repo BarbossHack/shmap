@@ -3,6 +3,8 @@
 
 use crate::errors::ShmapError;
 
+pub const SHM_DIR: &str = "/dev/shm";
+
 pub fn shm_open_read(name: &str) -> Result<i32, ShmapError> {
     let fd = shm_open(name, libc::O_RDONLY)?;
     if fd < 0 {
@@ -10,7 +12,7 @@ pub fn shm_open_read(name: &str) -> Result<i32, ShmapError> {
         if err.kind() == std::io::ErrorKind::NotFound {
             Err(ShmapError::ShmNotFound)
         } else {
-            Err(ShmapError::ShmOpenFailed)
+            Err(ShmapError::IOError(err))
         }
     } else {
         Ok(fd)
@@ -20,12 +22,14 @@ pub fn shm_open_read(name: &str) -> Result<i32, ShmapError> {
 pub fn shm_open_write(name: &str, length: usize) -> Result<i32, ShmapError> {
     let fd = shm_open(name, libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC)?;
     if fd < 0 {
-        return Err(ShmapError::ShmOpenFailed);
+        let err = std::io::Error::last_os_error();
+        return Err(ShmapError::IOError(err));
     }
 
     let ret = unsafe { libc::ftruncate(fd, length as libc::off_t) };
     if ret != 0 {
-        Err(ShmapError::ShmTruncatFailed(ret))
+        let err = std::io::Error::last_os_error();
+        Err(ShmapError::IOError(err))
     } else {
         Ok(fd)
     }
@@ -46,7 +50,7 @@ pub fn shm_unlink(name: &str) -> Result<(), ShmapError> {
         if err.kind() == std::io::ErrorKind::NotFound {
             Ok(())
         } else {
-            Err(ShmapError::ShmUnlinkFailed)
+            Err(ShmapError::IOError(err))
         }
     } else {
         Ok(())

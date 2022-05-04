@@ -2,15 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ShmapError {
-    #[error("shm_open failed")]
-    ShmOpenFailed,
-
-    #[error("shm_truncate failed: {}", _0)]
-    ShmTruncatFailed(i32),
-
-    #[error("shm_unlink failed")]
-    ShmUnlinkFailed,
-
     #[error("shm file not found")]
     ShmNotFound,
 

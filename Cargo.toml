@@ -9,12 +9,13 @@ license = "MIT OR Apache-2.0"
 name = "shmap"
 readme = "README.md"
 repository = "https://github.com/BarbossHack/shmap"
-version = "0.2.0"
+version = "0.2.1"
 
 [dependencies]
 # is bincode really faster than bson ?
 bincode = {version = "2.0.0-rc", features = ["serde"]}
 chrono = {version = "0.4", features = ["serde"]}
+fdlimit = "0.2"
 libc = "0.2"
 memmap2 = "0.5"
 named-lock = "0.2"

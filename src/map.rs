@@ -1,22 +1,24 @@
 use crate::{
     errors::ShmapError,
     metadata::Metadata,
-    shm::{shm_open_read, shm_open_write, shm_unlink},
+    shm::{shm_open_read, shm_open_write, shm_unlink, SHM_DIR},
 };
 use chrono::Utc;
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
 use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha224};
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
-const METADATAS_KEY: &str = "shmap_internal_index";
+const METADATA_SUFFIX: &str = "metadata";
+const SHMAP_PREFIX: &str = "shmap";
 
 #[derive(Clone, Copy)]
 pub struct Shmap {}
 
 impl Shmap {
     pub fn new() -> Result<Self, ShmapError> {
+        fdlimit::raise_fd_limit();
         let shmap = Shmap {};
         shmap.clean()?;
         Ok(shmap)
@@ -29,34 +31,44 @@ impl Shmap {
         let sanitized_key = sanitize_key(key);
 
         // Remove item if expired
-        if key.ne(METADATAS_KEY) {
-            let not_found = match self.get_metadata(key)? {
-                Some(index) => match index.expiration {
-                    Some(expiration) => {
-                        let expired = Utc::now().gt(&expiration);
-                        if expired {
-                            let _ = self.remove(key);
-                        }
-                        expired
+        let not_found = match self.get_metadata(key)? {
+            Some(metadata) => match metadata.expiration {
+                Some(expiration) => {
+                    let expired = Utc::now().gt(&expiration);
+                    if expired {
+                        let _ = self.remove(key);
                     }
-                    None => false,
-                },
-                None => true,
-            };
-            if not_found {
-                return Ok(None);
-            }
+                    expired
+                }
+                None => false,
+            },
+            None => true,
+        };
+        if not_found {
+            return Ok(None);
         }
 
-        let lock = NamedLock::create(&sanitized_key)?;
+        self._get(&sanitized_key)
+    }
+
+    fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
+        let sanitize_metadata_key = sanitize_metadata_key(key);
+        self._get(&sanitize_metadata_key)
+    }
+
+    fn _get<T>(&self, sanitized_key: &str) -> Result<Option<T>, ShmapError>
+    where
+        T: DeserializeOwned,
+    {
+        let lock = NamedLock::create(sanitized_key)?;
         let guard = lock.lock()?;
 
-        let fd = match shm_open_read(&sanitized_key) {
+        let fd = match shm_open_read(sanitized_key) {
             Ok(fd) => fd,
             Err(e) => match e {
                 ShmapError::ShmNotFound => {
                     drop(guard);
-                    let _ = self.remove(key);
+                    let _ = self._remove(sanitized_key);
                     return Ok(None);
                 }
                 e => return Err(e),
@@ -73,134 +85,113 @@ impl Shmap {
     where
         T: Serialize,
     {
-        self._insert(key, value, None)
+        let sanitized_key = sanitize_key(key);
+        self._insert(&sanitized_key, value)?;
+        self.insert_metadata(Metadata::new(key, None)?)
     }
 
     pub fn insert_with_ttl<T>(&self, key: &str, value: T, ttl: Duration) -> Result<(), ShmapError>
     where
         T: Serialize,
     {
-        self._insert(key, value, Some(ttl))
+        let sanitized_key = sanitize_key(key);
+        self._insert(&sanitized_key, value)?;
+        self.insert_metadata(Metadata::new(key, Some(ttl))?)
     }
 
-    fn _insert<T>(&self, key: &str, value: T, ttl: Option<Duration>) -> Result<(), ShmapError>
+    fn insert_metadata(&self, metadata: Metadata) -> Result<(), ShmapError> {
+        let sanitize_metadata_key = sanitize_metadata_key(&metadata.key);
+        self._insert(&sanitize_metadata_key, metadata)
+    }
+
+    fn _insert<T>(&self, sanitized_key: &str, value: T) -> Result<(), ShmapError>
     where
         T: Serialize,
     {
-        let sanitized_key = sanitize_key(key);
-
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
 
-        let lock = NamedLock::create(&sanitized_key)?;
+        let lock = NamedLock::create(sanitized_key)?;
         let guard = lock.lock()?;
 
         match || -> Result<(), ShmapError> {
-            let fd = shm_open_write(&sanitized_key, bytes.len())?;
+            let fd = shm_open_write(sanitized_key, bytes.len())?;
             let mut mmap = unsafe { MmapMut::map_mut(fd) }?;
             mmap.copy_from_slice(bytes.as_slice());
             Ok(())
         }() {
-            Ok(_) => {}
+            Ok(_) => Ok(()),
             Err(e) => {
                 drop(guard);
-                let _ = self.remove(key);
-                return Err(e);
+                let _ = self._remove(sanitized_key);
+                Err(e)
             }
-        };
-        drop(guard);
-
-        if key.ne(METADATAS_KEY) {
-            self.insert_metadata(key, Metadata::new(ttl)?)?;
         }
-
-        Ok(())
     }
 
     pub fn remove(&self, key: &str) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
-
-        let lock = NamedLock::create(&sanitized_key)?;
-        let _guard = lock.lock()?;
-
-        if key.ne(METADATAS_KEY) {
-            self.remove_metadata(key)?;
-        }
-
-        let _ = std::fs::remove_file(Path::new("/tmp").join(format!("{}.lock", &sanitized_key)));
-        shm_unlink(&sanitized_key)?;
-
-        Ok(())
-    }
-
-    fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
-        let lock = NamedLock::create(METADATAS_KEY)?;
-        let _guard = lock.lock()?;
-
-        match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
-            Some(metadatas) => match metadatas.get(key) {
-                Some(index) => Ok(Some(index.clone())),
-                None => Ok(None),
-            },
-            None => Ok(None),
-        }
-    }
-
-    fn insert_metadata(&self, key: &str, index: Metadata) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(METADATAS_KEY)?;
-        let _guard = lock.lock()?;
-
-        let mut metadatas = match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
-            Some(metadatas) => metadatas,
-            None => HashMap::new(),
-        };
-        metadatas.insert(key.to_string(), index);
-        self.insert(METADATAS_KEY, metadatas)?;
-        Ok(())
+        self._remove(&sanitized_key)?;
+        self.remove_metadata(key)
     }
 
     fn remove_metadata(&self, key: &str) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(METADATAS_KEY)?;
+        let sanitize_metadata_key = sanitize_metadata_key(key);
+        self._remove(&sanitize_metadata_key)
+    }
+
+    fn _remove(&self, sanitized_key: &str) -> Result<(), ShmapError> {
+        let lock = NamedLock::create(sanitized_key)?;
         let _guard = lock.lock()?;
 
-        match self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
-            Some(mut metadatas) => {
-                metadatas.remove(key);
-                self.insert(METADATAS_KEY, metadatas)?;
-            }
-            None => {}
-        }
+        let lock_file = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .join(format!("{}.lock", sanitized_key));
+        let _ = std::fs::remove_file(lock_file);
+        shm_unlink(sanitized_key)?;
+
         Ok(())
     }
 
     /// Clean expired items
     pub fn clean(&self) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(METADATAS_KEY)?;
-        let guard = lock.lock()?;
-
-        if let Some(metadatas) = self.get::<HashMap<String, Metadata>>(METADATAS_KEY)? {
-            let mut items_to_remove: Vec<String> = Vec::new();
-
-            let items_to_keep: HashMap<String, Metadata> = metadatas
-                .into_iter()
-                .filter(|(key, index)| match index.expiration {
-                    Some(expiration) => {
-                        let keep = Utc::now().le(&expiration);
-                        if !keep {
-                            items_to_remove.push(key.to_string());
+        let read_dir = std::fs::read_dir(PathBuf::from(SHM_DIR))?;
+        read_dir.into_iter().for_each(|dir_entry_res| {
+            if let Ok(dir_entry) = dir_entry_res {
+                let filename = dir_entry.file_name().to_string_lossy().to_string();
+                if filename.starts_with(SHMAP_PREFIX) && !filename.ends_with(METADATA_SUFFIX) {
+                    let metadata_filename =
+                        format!("{}.{}", dir_entry.path().to_string_lossy(), METADATA_SUFFIX);
+                    match self._get::<Metadata>(&metadata_filename) {
+                        Ok(Some(metadata)) => match metadata.expiration {
+                            Some(expiration) => {
+                                let keep = Utc::now().le(&expiration);
+                                if !keep {
+                                    // Expired, remove item and metadata
+                                    let _ = self._remove(&filename);
+                                    let _ = self._remove(&metadata_filename);
+                                }
+                            }
+                            None => {}
+                        },
+                        Ok(None) => {
+                            // Item exists, but metadata not found, remove item
+                            let _ = self._remove(&filename);
                         }
-                        keep
+                        Err(_) => {}
                     }
-                    None => true,
-                })
-                .collect();
-            self.insert(METADATAS_KEY, items_to_keep)?;
-
-            drop(guard);
-
-            items_to_remove.into_iter().for_each(|key| {
-                let _ = self.remove(&key);
-            });
-        }
+                } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(METADATA_SUFFIX)
+                {
+                    let filename_path = dir_entry.path().to_string_lossy().to_string();
+                    let item_filename =
+                        filename_path.trim_end_matches(&format!(".{}", METADATA_SUFFIX));
+                    if !PathBuf::from(item_filename).exists() {
+                        // Metadata exists, but item not found, remove metadata
+                        let _ = self._remove(&filename);
+                    }
+                }
+            }
+        });
         Ok(())
     }
 }
@@ -208,13 +199,16 @@ impl Shmap {
 fn sanitize_key(key: &str) -> String {
     let mut hasher = Sha224::new();
     hasher.update(key);
-    format!("sham.{:x}", hasher.finalize())
+    format!("{}.{:x}", SHMAP_PREFIX, hasher.finalize())
+}
+
+fn sanitize_metadata_key(key: &str) -> String {
+    format!("{}.{}", sanitize_key(key), METADATA_SUFFIX)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{map::METADATAS_KEY, metadata::Metadata, tests::map::rand_string, Shmap};
-    use std::collections::HashMap;
+    use crate::{tests::map::rand_string, Shmap};
 
     #[test]
     fn test_metadatas_presence() {
@@ -223,18 +217,11 @@ mod tests {
         let value = rand_string(50);
 
         shmap.insert(&key, value).unwrap();
-        let metadatas = shmap
-            .get::<HashMap<String, Metadata>>(METADATAS_KEY)
-            .unwrap()
-            .unwrap();
-        assert!(metadatas.contains_key(&key));
+        let _ = shmap.get_metadata(&key).unwrap().unwrap();
 
         let shmap = Shmap::new().unwrap();
         shmap.remove(&key).unwrap();
-        let metadatas = shmap
-            .get::<HashMap<String, Metadata>>(METADATAS_KEY)
-            .unwrap()
-            .unwrap();
-        assert!(!metadatas.contains_key(&key));
+        let should_be_none = shmap.get_metadata(&key).unwrap();
+        assert!(should_be_none.is_none());
     }
 }
