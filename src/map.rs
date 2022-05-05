@@ -17,6 +17,12 @@ const SHMAP_PREFIX: &str = "shmap";
 #[derive(Clone, Copy)]
 pub struct Shmap {}
 
+impl Default for Shmap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Shmap {
     pub fn new() -> Self {
         fdlimit::raise_fd_limit();
