@@ -4,6 +4,7 @@ use crate::{
     shm::{shm_open_read, shm_open_write, shm_unlink, SHM_DIR},
 };
 use chrono::Utc;
+use log::warn;
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
 use serde::{de::DeserializeOwned, Serialize};
@@ -17,11 +18,13 @@ const SHMAP_PREFIX: &str = "shmap";
 pub struct Shmap {}
 
 impl Shmap {
-    pub fn new() -> Result<Self, ShmapError> {
+    pub fn new() -> Self {
         fdlimit::raise_fd_limit();
         let shmap = Shmap {};
-        shmap.clean()?;
-        Ok(shmap)
+        shmap
+            .clean()
+            .unwrap_or_else(|e| warn!("Error while cleaning shmap keys: {}", e));
+        shmap
     }
 
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, ShmapError>
@@ -147,11 +150,6 @@ impl Shmap {
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let _guard = lock.lock()?;
 
-        let lock_file = std::env::var_os("TMPDIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(format!("{}.lock", sanitized_key));
-        let _ = std::fs::remove_file(lock_file);
         shm_unlink(sanitized_key)?;
 
         Ok(())
@@ -216,14 +214,14 @@ mod tests {
 
     #[test]
     fn test_metadatas_presence() {
-        let shmap = Shmap::new().unwrap();
+        let shmap = Shmap::new();
         let key = rand_string(10);
         let value = rand_string(50);
 
         shmap.insert(&key, value).unwrap();
         let _ = shmap.get_metadata(&key).unwrap().unwrap();
 
-        let shmap = Shmap::new().unwrap();
+        let shmap = Shmap::new();
         shmap.remove(&key).unwrap();
         let should_be_none = shmap.get_metadata(&key).unwrap();
         assert!(should_be_none.is_none());

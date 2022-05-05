@@ -13,14 +13,14 @@ pub fn rand_string(len: usize) -> String {
 #[test]
 #[should_panic(expected = "Option::unwrap()")]
 fn test_get_unknown() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let _: String = shmap.get(&key).unwrap().unwrap();
 }
 
 #[test]
 fn simple_test() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(50);
 
@@ -32,7 +32,7 @@ fn simple_test() {
 
 #[test]
 fn test_set_and_get() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(50);
 
@@ -62,7 +62,7 @@ fn test_set_and_get() {
 
 #[test]
 fn test_set_and_get_big() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(5 * 1024 * 1024);
 
@@ -79,7 +79,7 @@ fn test_set_and_get_big() {
 
 #[test]
 fn test_remove() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(50);
 
@@ -90,7 +90,7 @@ fn test_remove() {
 
 #[test]
 fn test_remove_not_found() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     shmap.remove(&key).unwrap();
 }
@@ -98,7 +98,7 @@ fn test_remove_not_found() {
 #[test]
 #[should_panic(expected = "Option::unwrap()")]
 fn test_expiration() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(50);
 
@@ -117,7 +117,7 @@ fn test_expiration() {
 // test concurrency between set
 #[test]
 fn test_set_concurrency() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let key_clone = key.clone();
 
@@ -140,7 +140,7 @@ fn test_set_concurrency() {
 // test concurrency between get
 #[test]
 fn test_get_concurrency() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let value = rand_string(50);
     let key_clone = key.clone();
@@ -165,7 +165,7 @@ fn test_get_concurrency() {
 // test concurrency between set and get
 #[test]
 fn test_get_set_concurrency() {
-    let shmap = Shmap::new().unwrap();
+    let shmap = Shmap::new();
     let key = rand_string(10);
     let key_clone = key.clone();
 
@@ -193,7 +193,7 @@ fn test_metadatas_concurrency() {
 
     let task = move || {
         for i in 0..1024 {
-            let shmap = Shmap::new().unwrap();
+            let shmap = Shmap::new();
             let value = rand_string(i);
             shmap.insert(&key, value.to_owned()).unwrap();
             let _: Option<String> = shmap.get(&key).unwrap();

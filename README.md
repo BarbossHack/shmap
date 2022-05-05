@@ -11,12 +11,14 @@ use shmap::{Shmap, ShmapError};
 use std::time::Duration;
 
 fn main() -> Result<(), ShmapError> {
-    let shmap = Shmap::new()?;
+    let shmap = Shmap::new();
 
     shmap.insert("key", "value")?;
     let value = shmap.get("key")?;
     assert_eq!(Some("value".to_string()), value);
 
+    // We strongly advise to use Shmap with TTL to avoid opening too many file descriptors,
+    // or using too much RAM
     shmap.insert_with_ttl("key", "temporary_value", Duration::from_secs(60))?;
 
     Ok(())
