@@ -60,7 +60,7 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
-        let lock = NamedLock::create(sanitized_key)?;
+        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
         let fd = match shm_open_read(sanitized_key) {
@@ -75,7 +75,11 @@ impl Shmap {
             },
         };
         let mmap = unsafe { Mmap::map(fd) }?;
-
+        if mmap.len() <= 0 {
+            drop(guard);
+            let _ = self._remove(sanitized_key);
+            return Ok(None);
+        }
         let (value, _): (T, usize) =
             bincode::serde::decode_from_slice(mmap.as_ref(), bincode::config::standard())?;
         Ok(Some(value))
@@ -110,7 +114,7 @@ impl Shmap {
     {
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
 
-        let lock = NamedLock::create(sanitized_key)?;
+        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
         match || -> Result<(), ShmapError> {
@@ -140,7 +144,7 @@ impl Shmap {
     }
 
     fn _remove(&self, sanitized_key: &str) -> Result<(), ShmapError> {
-        let lock = NamedLock::create(sanitized_key)?;
+        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let _guard = lock.lock()?;
 
         let lock_file = std::env::var_os("TMPDIR")
