@@ -75,7 +75,7 @@ impl Shmap {
             },
         };
         let mmap = unsafe { Mmap::map(fd) }?;
-        if mmap.len() <= 0 {
+        if mmap.len() == 0 {
             drop(guard);
             let _ = self._remove(sanitized_key);
             return Ok(None);
