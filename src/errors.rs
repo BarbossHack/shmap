@@ -22,4 +22,7 @@ pub enum ShmapError {
 
     #[error("DurationOutOfRangeError")]
     DurationOutOfRangeError,
+
+    #[error("AesGcmError: {}", _0)]
+    AesGcmError(#[from] aes_gcm::Error),
 }

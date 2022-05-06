@@ -11,7 +11,11 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new(key: &str, ttl: Option<std::time::Duration>) -> Result<Self, ShmapError> {
+    pub fn new(
+        key: &str,
+        ttl: Option<std::time::Duration>,
+        encrypted: bool,
+    ) -> Result<Self, ShmapError> {
         let expiration = match ttl {
             Some(ttl) => Some(
                 Utc::now()
@@ -24,7 +28,7 @@ impl Metadata {
         Ok(Metadata {
             key: key.to_owned(),
             expiration,
-            encrypted: false,
+            encrypted,
         })
     }
 }

@@ -3,10 +3,15 @@ use crate::{
     metadata::Metadata,
     shm::{shm_open_read, shm_open_write, shm_unlink, SHM_DIR},
 };
+use aes_gcm::{
+    aead::{Aead, NewAead},
+    Aes256Gcm, Key, Nonce,
+};
 use chrono::Utc;
 use log::warn;
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
+use rand::{seq::SliceRandom, thread_rng};
 use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha224};
 use std::{path::PathBuf, time::Duration};
@@ -14,8 +19,10 @@ use std::{path::PathBuf, time::Duration};
 const METADATA_SUFFIX: &str = "metadata";
 const SHMAP_PREFIX: &str = "shmap";
 
-#[derive(Clone, Copy)]
-pub struct Shmap {}
+#[derive(Clone)]
+pub struct Shmap {
+    cipher: Option<Aes256Gcm>,
+}
 
 impl Default for Shmap {
     fn default() -> Self {
@@ -25,8 +32,22 @@ impl Default for Shmap {
 
 impl Shmap {
     pub fn new() -> Self {
+        Shmap::_new(None)
+    }
+
+    pub fn new_with_encryption(encryption_key: &[u8; 32]) -> Self {
+        Shmap::_new(Some(encryption_key))
+    }
+
+    fn _new(encryption_key: Option<&[u8; 32]>) -> Self {
         fdlimit::raise_fd_limit();
-        let shmap = Shmap {};
+
+        let cipher = encryption_key.map(|key| {
+            let key = Key::from_slice(key);
+            Aes256Gcm::new(key)
+        });
+
+        let shmap = Shmap { cipher };
         shmap
             .clean()
             .unwrap_or_else(|e| warn!("Error while cleaning shmap keys: {}", e));
@@ -89,8 +110,19 @@ impl Shmap {
             let _ = self._remove(sanitized_key);
             return Ok(None);
         }
+
+        let bytes = if let Some(cipher) = &self.cipher {
+            let nonce = Nonce::from_slice(&mmap[..12]);
+            cipher.decrypt(nonce, &mmap[12..])?
+        } else {
+            mmap.to_vec()
+        };
+
+        drop(guard);
+
         let (value, _): (T, usize) =
-            bincode::serde::decode_from_slice(mmap.as_ref(), bincode::config::standard())?;
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
+
         Ok(Some(value))
     }
 
@@ -100,7 +132,7 @@ impl Shmap {
     {
         let sanitized_key = sanitize_key(key);
         self._insert(&sanitized_key, value)?;
-        self.insert_metadata(Metadata::new(key, None)?)
+        self.insert_metadata(Metadata::new(key, None, self.cipher.is_some())?)
     }
 
     pub fn insert_with_ttl<T>(&self, key: &str, value: T, ttl: Duration) -> Result<(), ShmapError>
@@ -109,7 +141,7 @@ impl Shmap {
     {
         let sanitized_key = sanitize_key(key);
         self._insert(&sanitized_key, value)?;
-        self.insert_metadata(Metadata::new(key, Some(ttl))?)
+        self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
     }
 
     fn insert_metadata(&self, metadata: Metadata) -> Result<(), ShmapError> {
@@ -122,6 +154,17 @@ impl Shmap {
         T: Serialize,
     {
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
+
+        let bytes = if let Some(cipher) = &self.cipher {
+            let mut nonce: Vec<u8> = (0..12).collect();
+            nonce.shuffle(&mut thread_rng());
+            let mut ciphertext =
+                cipher.encrypt(Nonce::from_slice(nonce.as_slice()), bytes.as_ref())?;
+            nonce.append(&mut ciphertext);
+            nonce
+        } else {
+            bytes
+        };
 
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;

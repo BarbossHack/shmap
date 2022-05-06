@@ -1,5 +1,5 @@
 use crate::Shmap;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
 use std::time::Duration;
 
 pub fn rand_string(len: usize) -> String {
@@ -27,6 +27,68 @@ fn simple_test() {
     shmap.insert(&key, value.to_owned()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
+    shmap.remove(&key).unwrap();
+}
+
+#[test]
+fn test_different_size() {
+    let key = rand_string(10);
+
+    let shmap = Shmap::new();
+    let value = rand_string(50);
+    shmap.insert(&key, value.to_owned()).unwrap();
+    let ret_value: String = shmap.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value, value);
+
+    let shmap = Shmap::new();
+    let value = rand_string(100);
+    shmap.insert(&key, value.to_owned()).unwrap();
+    let ret_value: String = shmap.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value, value);
+
+    let shmap = Shmap::new();
+    let value = rand_string(20);
+    shmap.insert(&key, value.to_owned()).unwrap();
+    let ret_value: String = shmap.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value, value);
+
+    shmap.remove(&key).unwrap();
+}
+
+#[test]
+fn test_encrypted() {
+    let mut secret: Vec<u8> = (0..32).collect();
+    secret.shuffle(&mut thread_rng());
+
+    let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
+    let key = rand_string(10);
+    let value = rand_string(50);
+
+    shmap.insert(&key, value.to_owned()).unwrap();
+    let ret_value: String = shmap.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value, value);
+
+    shmap.remove(&key).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "AesGcmError(Error)")]
+fn test_bad_key() {
+    let key = rand_string(10);
+    let value = rand_string(50);
+
+    let mut secret: Vec<u8> = (0..32).collect();
+    secret.shuffle(&mut thread_rng());
+    let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
+    shmap.insert(&key, value.to_owned()).unwrap();
+    let ret_value: String = shmap.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value, value);
+
+    let mut secret: Vec<u8> = (0..32).collect();
+    secret.shuffle(&mut thread_rng());
+    let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
+    let _: String = shmap.get(&key).unwrap().unwrap();
+
     shmap.remove(&key).unwrap();
 }
 
@@ -121,10 +183,11 @@ fn test_set_concurrency() {
     let key = rand_string(10);
     let key_clone = key.clone();
 
+    let shmap_clone = shmap.clone();
     let task = move || {
         for i in 0..1024 {
             let value = rand_string(i);
-            shmap.insert(&key, value).unwrap();
+            shmap_clone.insert(&key, value).unwrap();
         }
     };
 
@@ -147,9 +210,10 @@ fn test_get_concurrency() {
 
     shmap.insert(&key, value).unwrap();
 
+    let shmap_clone = shmap.clone();
     let task = move || {
         for _ in 0..1024 {
-            let _: String = shmap.get(&key).unwrap().unwrap();
+            let _: String = shmap_clone.get(&key).unwrap().unwrap();
         }
     };
 
@@ -169,11 +233,12 @@ fn test_get_set_concurrency() {
     let key = rand_string(10);
     let key_clone = key.clone();
 
+    let shmap_clone = shmap.clone();
     let task = move || {
         for i in 0..1024 {
             let value = rand_string(i);
-            shmap.insert(&key, value.to_owned()).unwrap();
-            let _: String = shmap.get(&key).unwrap().unwrap();
+            shmap_clone.insert(&key, value.to_owned()).unwrap();
+            let _: String = shmap_clone.get(&key).unwrap().unwrap();
         }
     };
 
@@ -191,9 +256,13 @@ fn test_get_set_concurrency() {
 fn test_metadatas_concurrency() {
     let key = rand_string(10);
 
+    let mut secret: Vec<u8> = (0..32).collect();
+    secret.shuffle(&mut thread_rng());
+
     let task = move || {
         for i in 0..1024 {
-            let shmap = Shmap::new();
+            let secret = secret.clone();
+            let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
             let value = rand_string(i);
             shmap.insert(&key, value.to_owned()).unwrap();
             let _: Option<String> = shmap.get(&key).unwrap();
