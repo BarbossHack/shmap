@@ -78,18 +78,29 @@ impl Shmap {
             return Ok(None);
         }
 
-        self._get(&sanitized_key)
+        self.get_deserialize(&sanitized_key)
     }
 
     fn get_metadata(&self, key: &str) -> Result<Option<Metadata>, ShmapError> {
-        let sanitize_metadata_key = sanitize_metadata_key(key);
-        self._get(&sanitize_metadata_key)
+        let sanitized_metadata_key = sanitize_metadata_key(key);
+        self.get_deserialize(&sanitized_metadata_key)
     }
 
-    fn _get<T>(&self, sanitized_key: &str) -> Result<Option<T>, ShmapError>
+    fn get_deserialize<T>(&self, sanitized_key: &str) -> Result<Option<T>, ShmapError>
     where
         T: DeserializeOwned,
     {
+        match self.get_raw(&sanitized_key)? {
+            Some(bytes) => {
+                let (value, _): (T, usize) =
+                    bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
+                Ok(Some(value))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_raw(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
@@ -118,12 +129,7 @@ impl Shmap {
             mmap.to_vec()
         };
 
-        drop(guard);
-
-        let (value, _): (T, usize) =
-            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
-
-        Ok(Some(value))
+        Ok(Some(bytes))
     }
 
     pub fn insert<T>(&self, key: &str, value: T) -> Result<(), ShmapError>
@@ -131,7 +137,7 @@ impl Shmap {
         T: Serialize,
     {
         let sanitized_key = sanitize_key(key);
-        self._insert(&sanitized_key, value)?;
+        self.insert_serialize(&sanitized_key, value)?;
         self.insert_metadata(Metadata::new(key, None, self.cipher.is_some())?)
     }
 
@@ -140,30 +146,43 @@ impl Shmap {
         T: Serialize,
     {
         let sanitized_key = sanitize_key(key);
-        self._insert(&sanitized_key, value)?;
+        self.insert_serialize(&sanitized_key, value)?;
+        self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
+    }
+
+    pub fn insert_raw_with_ttl(
+        &self,
+        key: &str,
+        value: &[u8],
+        ttl: Duration,
+    ) -> Result<(), ShmapError> {
+        let sanitized_key = sanitize_key(key);
+        self.insert_raw(&sanitized_key, value)?;
         self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
     }
 
     fn insert_metadata(&self, metadata: Metadata) -> Result<(), ShmapError> {
         let sanitize_metadata_key = sanitize_metadata_key(&metadata.key);
-        self._insert(&sanitize_metadata_key, metadata)
+        self.insert_serialize(&sanitize_metadata_key, metadata)
     }
 
-    fn _insert<T>(&self, sanitized_key: &str, value: T) -> Result<(), ShmapError>
+    fn insert_serialize<T>(&self, sanitized_key: &str, value: T) -> Result<(), ShmapError>
     where
         T: Serialize,
     {
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
+        self.insert_raw(sanitized_key, &bytes)
+    }
 
+    pub fn insert_raw(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
         let bytes = if let Some(cipher) = &self.cipher {
             let mut nonce: Vec<u8> = (0..12).collect();
             nonce.shuffle(&mut thread_rng());
-            let mut ciphertext =
-                cipher.encrypt(Nonce::from_slice(nonce.as_slice()), bytes.as_ref())?;
+            let mut ciphertext = cipher.encrypt(Nonce::from_slice(nonce.as_slice()), value)?;
             nonce.append(&mut ciphertext);
             nonce
         } else {
-            bytes
+            value.to_vec()
         };
 
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
@@ -213,7 +232,7 @@ impl Shmap {
                 if filename.starts_with(SHMAP_PREFIX) && !filename.ends_with(METADATA_SUFFIX) {
                     let metadata_filename =
                         format!("{}.{}", dir_entry.path().to_string_lossy(), METADATA_SUFFIX);
-                    match self._get::<Metadata>(&metadata_filename) {
+                    match self.get_deserialize::<Metadata>(&metadata_filename) {
                         Ok(Some(metadata)) => match metadata.expiration {
                             Some(expiration) => {
                                 let keep = Utc::now().le(&expiration);
