@@ -90,7 +90,7 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
-        match self.get_raw(&sanitized_key)? {
+        match self.get_raw(sanitized_key)? {
             Some(bytes) => {
                 let (value, _): (T, usize) =
                     bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
