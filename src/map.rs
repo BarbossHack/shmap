@@ -48,9 +48,9 @@ impl Shmap {
         });
 
         let shmap = Shmap { cipher };
-        shmap
-            .clean()
-            .unwrap_or_else(|e| warn!("Error while cleaning shmap keys: {}", e));
+        if let Err(e) = shmap.clean() {
+            warn!("Error while cleaning shmap keys: {}", e)
+        }
         shmap
     }
 
@@ -223,8 +223,13 @@ impl Shmap {
         Ok(())
     }
 
+    pub fn keys(&self) -> Result<Vec<String>, ShmapError> {
+        self.clean()
+    }
+
     /// Clean expired items
-    pub fn clean(&self) -> Result<(), ShmapError> {
+    pub fn clean(&self) -> Result<Vec<String>, ShmapError> {
+        let mut keys = Vec::<String>::new();
         let read_dir = std::fs::read_dir(PathBuf::from(SHM_DIR))?;
         read_dir.into_iter().for_each(|dir_entry_res| {
             if let Ok(dir_entry) = dir_entry_res {
@@ -235,20 +240,27 @@ impl Shmap {
                     match self.get_deserialize::<Metadata>(&metadata_filename) {
                         Ok(Some(metadata)) => match metadata.expiration {
                             Some(expiration) => {
-                                let keep = Utc::now().le(&expiration);
-                                if !keep {
+                                if Utc::now().gt(&expiration) {
                                     // Expired, remove item and metadata
                                     let _ = self._remove(&filename);
                                     let _ = self._remove(&metadata_filename);
+                                } else {
+                                    // Not expired, add to list
+                                    keys.push(metadata.key);
                                 }
                             }
-                            None => {}
+                            None => {
+                                // Not expiration, add to list
+                                keys.push(metadata.key);
+                            }
                         },
                         Ok(None) => {
                             // Item exists, but metadata not found, remove item
                             let _ = self._remove(&filename);
                         }
-                        Err(_) => {}
+                        Err(_) => {
+                            // Can't deserialized metadata or something else happens
+                        }
                     }
                 } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(METADATA_SUFFIX)
                 {
@@ -262,7 +274,7 @@ impl Shmap {
                 }
             }
         });
-        Ok(())
+        Ok(keys)
     }
 }
 

@@ -256,13 +256,9 @@ fn test_get_set_concurrency() {
 fn test_metadatas_concurrency() {
     let key = rand_string(10);
 
-    let mut secret: Vec<u8> = (0..32).collect();
-    secret.shuffle(&mut thread_rng());
-
     let task = move || {
         for i in 0..1024 {
-            let secret = secret.clone();
-            let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
+            let shmap = Shmap::new();
             let value = rand_string(i);
             shmap.insert(&key, value.to_owned()).unwrap();
             let _: Option<String> = shmap.get(&key).unwrap();
