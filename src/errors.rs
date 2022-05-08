@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ShmapError {
     #[error("shm file not found")]
-    ShmNotFound,
+    ShmFileNotFound,
 
     #[error("CStringNulError: {}", _0)]
     CStringNulError(#[from] std::ffi::NulError),

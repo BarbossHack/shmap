@@ -25,16 +25,19 @@ pub struct Shmap {
 }
 
 impl Default for Shmap {
+    /// Default is Shmap without encryption.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl Shmap {
+    /// Initialize Shmap with no TTL or encryption.
     pub fn new() -> Self {
         Shmap::_new(None)
     }
 
+    /// Initialize Shmap with AES256 encryption key (random bytes).
     pub fn new_with_encryption(encryption_key: &[u8; 32]) -> Self {
         Shmap::_new(Some(encryption_key))
     }
@@ -42,6 +45,7 @@ impl Shmap {
     fn _new(encryption_key: Option<&[u8; 32]>) -> Self {
         fdlimit::raise_fd_limit();
 
+        // If an encryption key was provided, create and store a `cipher` for AES256-GCM
         let cipher = encryption_key.map(|key| {
             let key = Key::from_slice(key);
             Aes256Gcm::new(key)
@@ -54,6 +58,7 @@ impl Shmap {
         shmap
     }
 
+    /// Get an item value by its key, and deserialize it (using `bincode`) to T.
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, ShmapError>
     where
         T: DeserializeOwned,
@@ -100,16 +105,20 @@ impl Shmap {
         }
     }
 
+    /// Get an item by its key, without deserialization, as bytes.
+    /// FIXME: it should be a `key`, not a `sanitized_key`
     pub fn get_raw(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
+        // Read the item from shm
         let fd = match shm_open_read(sanitized_key) {
             Ok(fd) => fd,
             Err(e) => match e {
-                ShmapError::ShmNotFound => {
+                ShmapError::ShmFileNotFound => {
+                    // If the shm returns "file not found", return None
                     drop(guard);
-                    let _ = self._remove(sanitized_key);
+                    //let _ = self._remove(sanitized_key); // useless
                     return Ok(None);
                 }
                 e => return Err(e),
@@ -117,11 +126,13 @@ impl Shmap {
         };
         let mmap = unsafe { Mmap::map(fd) }?;
         if mmap.len() == 0 {
+            // If the value is empty, remove it and return None
             drop(guard);
             let _ = self._remove(sanitized_key);
             return Ok(None);
         }
 
+        // If an encryption key was provided, decrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
             let nonce = Nonce::from_slice(&mmap[..12]);
             cipher.decrypt(nonce, &mmap[12..])?
@@ -132,6 +143,7 @@ impl Shmap {
         Ok(Some(bytes))
     }
 
+    /// Insert a new item, using `bincode` serialization.
     pub fn insert<T>(&self, key: &str, value: T) -> Result<(), ShmapError>
     where
         T: Serialize,
@@ -141,6 +153,7 @@ impl Shmap {
         self.insert_metadata(Metadata::new(key, None, self.cipher.is_some())?)
     }
 
+    /// Insert a new item, using `bincode` serialization, with a TTL.
     pub fn insert_with_ttl<T>(&self, key: &str, value: T, ttl: Duration) -> Result<(), ShmapError>
     where
         T: Serialize,
@@ -150,6 +163,7 @@ impl Shmap {
         self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
     }
 
+    /// Insert a new item, without serialization, with a TTL.
     pub fn insert_raw_with_ttl(
         &self,
         key: &str,
@@ -174,7 +188,10 @@ impl Shmap {
         self.insert_raw(sanitized_key, &bytes)
     }
 
+    /// Insert a new item, without serialization.
+    /// FIXME: it should be a `key`, not a `sanitized_key`
     pub fn insert_raw(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
+        // If an encryption key was provided, encrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
             let mut nonce: Vec<u8> = (0..12).collect();
             nonce.shuffle(&mut thread_rng());
@@ -188,6 +205,7 @@ impl Shmap {
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
+        // Insert the item to shm
         match || -> Result<(), ShmapError> {
             let fd = shm_open_write(sanitized_key, bytes.len())?;
             let mut mmap = unsafe { MmapMut::map_mut(fd) }?;
@@ -203,6 +221,7 @@ impl Shmap {
         }
     }
 
+    /// Remove an item by its key.
     pub fn remove(&self, key: &str) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
         self._remove(&sanitized_key)?;
@@ -223,11 +242,12 @@ impl Shmap {
         Ok(())
     }
 
+    /// List available keys.
     pub fn keys(&self) -> Result<Vec<String>, ShmapError> {
         self.clean()
     }
 
-    /// Clean expired items
+    /// Clean expired items.
     pub fn clean(&self) -> Result<Vec<String>, ShmapError> {
         let mut keys = Vec::<String>::new();
         let read_dir = std::fs::read_dir(PathBuf::from(SHM_DIR))?;
