@@ -95,7 +95,7 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
-        match self.get_raw(sanitized_key)? {
+        match self._get(sanitized_key)? {
             Some(bytes) => {
                 let (value, _): (T, usize) =
                     bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
@@ -106,8 +106,12 @@ impl Shmap {
     }
 
     /// Get an item by its key, without deserialization, as bytes.
-    /// FIXME: it should be a `key`, not a `sanitized_key`
-    pub fn get_raw(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
+    pub fn get_raw(&self, key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
+        let sanitized_key = sanitize_key(key);
+        self._get(&sanitized_key)
+    }
+
+    fn _get(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
         let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
         let guard = lock.lock()?;
 
@@ -171,7 +175,7 @@ impl Shmap {
         ttl: Duration,
     ) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
-        self.insert_raw(&sanitized_key, value)?;
+        self._insert(&sanitized_key, value)?;
         self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
     }
 
@@ -185,12 +189,16 @@ impl Shmap {
         T: Serialize,
     {
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
-        self.insert_raw(sanitized_key, &bytes)
+        self._insert(sanitized_key, &bytes)
     }
 
     /// Insert a new item, without serialization.
-    /// FIXME: it should be a `key`, not a `sanitized_key`
-    pub fn insert_raw(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
+    pub fn insert_raw(&self, key: &str, value: &[u8]) -> Result<(), ShmapError> {
+        let sanitized_key = sanitize_key(key);
+        self._insert(&sanitized_key, value)
+    }
+
+    fn _insert(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
         // If an encryption key was provided, encrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
             let mut nonce: Vec<u8> = (0..12).collect();

@@ -1,33 +1,37 @@
 # **Shmap**
 
- **A key-value store based on unix shared-memory files (shm) for persisting state across program restarts.**
+**A key-value store based on unix shared-memory files (shm) for persisting state across program restarts.**
 
- Items are stored in the unix shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
+## Features
 
- Concurrent access to items it provided thanks to `named-lock` mutexes.
+- Items are stored in the unix shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
 
- Value serialization can be made transparently with serde (`bincode`), so don't forget to use [serde_bytes](https://crates.io/crates/serde_bytes) to enable optimized handling of `&[u8]` and `Vec<u8>` !
+- Concurrent access to items it provided thanks to `named-lock` mutexes.
 
- Here is a basic example :
+- Value serialization can be made transparently with serde (`bincode`), so don't forget to use [serde_bytes](https://crates.io/crates/serde_bytes) to enable optimized handling of `&[u8]` and `Vec<u8>` !
 
- ```rust
- use shmap::{Shmap, ShmapError};
- use std::time::Duration;
+- You can protect your data with AES256-GCM encryption.
 
- fn main() -> Result<(), ShmapError> {
-     let shmap = Shmap::new();
+- You can add a TTL so that your items won't be available anymore after this timeout.
 
-     shmap.insert("key", "value")?;
-     let value = shmap.get("key")?;
+## Example
 
-     assert_eq!(Some("value".to_string()), value);
+```rust
+use shmap::{Shmap, ShmapError};
+use std::time::Duration;
 
-     Ok(())
- }
- ```
+fn main() -> Result<(), ShmapError> {
+    let shmap = Shmap::new();
 
-## Todo
+    shmap.insert("key", "value")?;
+    let value = shmap.get("key")?;
 
-- [x] Inter-process Mutex
-- [x] Item encryption
-- [x] Item TTL
+    assert_eq!(Some("value".to_string()), value);
+
+    // We strongly advise to use Shmap with TTL to avoid opening too many file descriptors,
+    // or using too much RAM
+    shmap.insert_with_ttl("key", "temporary_value", Duration::from_secs(60))?;
+
+    Ok(())
+}
+```
