@@ -9,18 +9,18 @@ license = "MIT OR Apache-2.0"
 name = "shmap"
 readme = "README.md"
 repository = "https://github.com/BarbossHack/shmap"
-version = "0.4.1"
+version = "0.4.2"
 
 [dependencies]
-aes-gcm = { version = "0.9", features = ["std"] }
+aes-gcm = { version = "0.10.1", features = ["std"] }
 bincode = { version = "2.0.0-rc", default-features = false, features = ["std", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-fdlimit = "0.2"
-libc = "0.2"
-log = "0.4"
-memmap2 = "0.5"
-named-lock = "0.2"
-rand = "0.8"
-serde = { version = "1.0", features = ["serde_derive"] }
-sha2 = "0.10"
-thiserror = "1.0"
+fdlimit = "0.2.1"
+libc = "0.2.139"
+log = "0.4.17"
+memmap2 = "0.5.8"
+named-lock = "0.3.0"
+rand = "0.8.5"
+serde = { version = "1.0.152", features = ["serde_derive"] }
+sha2 = "0.10.6"
+thiserror = "1.0.38"

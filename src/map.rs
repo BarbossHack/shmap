@@ -4,8 +4,8 @@ use crate::{
     shm::{shm_open_read, shm_open_write, shm_unlink, SHM_DIR},
 };
 use aes_gcm::{
-    aead::{Aead, NewAead},
-    Aes256Gcm, Key, Nonce,
+    aead::{generic_array::GenericArray, Aead},
+    Aes256Gcm, KeyInit, Nonce,
 };
 use chrono::Utc;
 use log::warn;
@@ -45,9 +45,9 @@ impl Shmap {
     fn _new(encryption_key: Option<&[u8; 32]>) -> Self {
         fdlimit::raise_fd_limit();
 
-        // If an encryption key was provided, create and store a `cipher` for AES256-GCM
+        // If an encryption key was provided, create a `cipher` for AES256-GCM
         let cipher = encryption_key.map(|key| {
-            let key = Key::from_slice(key);
+            let key = GenericArray::from_slice(key);
             Aes256Gcm::new(key)
         });
 
@@ -306,7 +306,7 @@ impl Shmap {
     }
 }
 
-fn sanitize_key(key: &str) -> String {
+pub(crate) fn sanitize_key(key: &str) -> String {
     let mut hasher = Sha224::new();
     hasher.update(key);
     format!("{}.{:x}", SHMAP_PREFIX, hasher.finalize())

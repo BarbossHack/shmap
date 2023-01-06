@@ -1,4 +1,5 @@
-use crate::Shmap;
+use crate::{map::sanitize_key, shm::shm_open_read, Shmap};
+use memmap2::Mmap;
 use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
 use std::time::Duration;
 
@@ -8,6 +9,12 @@ pub fn rand_string(len: usize) -> String {
         .take(len)
         .map(char::from)
         .collect()
+}
+
+fn read_from_shm(sanitized_key: &str) -> Vec<u8> {
+    let fd = shm_open_read(sanitized_key).unwrap();
+    let mmap = unsafe { Mmap::map(fd) }.unwrap();
+    mmap.to_vec()
 }
 
 #[test]
@@ -60,15 +67,27 @@ fn test_encrypted() {
     let mut secret: Vec<u8> = (0..32).collect();
     secret.shuffle(&mut thread_rng());
 
-    let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
+    let shmap_enc = Shmap::new_with_encryption(&secret.try_into().unwrap());
     let key = rand_string(10);
     let value = rand_string(50);
 
-    shmap.insert(&key, value.to_owned()).unwrap();
-    let ret_value: String = shmap.get(&key).unwrap().unwrap();
-    assert_eq!(ret_value, value);
+    shmap_enc.insert(&key, value.to_owned()).unwrap();
+    let ret_value_1: String = shmap_enc.get(&key).unwrap().unwrap();
+    assert_eq!(ret_value_1, value);
 
-    shmap.remove(&key).unwrap();
+    // Compare with non-encrypted
+    let shmap = Shmap::new();
+    let key_2 = rand_string(10);
+    shmap.insert(&key_2, value.to_owned()).unwrap();
+    let ret_value_2: String = shmap.get(&key_2).unwrap().unwrap();
+    assert_eq!(ret_value_2, value);
+    assert_eq!(ret_value_1, ret_value_2);
+    let raw_1 = read_from_shm(&sanitize_key(&key));
+    let raw_2 = read_from_shm(&sanitize_key(&key_2));
+    assert_ne!(raw_1, raw_2);
+
+    shmap_enc.remove(&key).unwrap();
+    shmap.remove(&key_2).unwrap();
 }
 
 #[test]
