@@ -133,9 +133,6 @@ impl Shmap {
             // If the value is empty, remove it and return None
             drop(guard);
             let _ = self._remove(sanitized_key);
-            unsafe {
-                libc::close(fd);
-            }
             return Ok(None);
         }
 
@@ -146,9 +143,6 @@ impl Shmap {
         } else {
             mmap.to_vec()
         };
-        unsafe {
-            libc::close(fd);
-        }
         Ok(Some(bytes))
     }
 
@@ -223,9 +217,6 @@ impl Shmap {
             let fd = shm_open_write(sanitized_key, bytes.len())?;
             let mut mmap = unsafe { MmapMut::map_mut(fd) }?;
             mmap.copy_from_slice(bytes.as_slice());
-            unsafe {
-                libc::close(fd);
-            }
             Ok(())
         }() {
             Ok(_) => Ok(()),

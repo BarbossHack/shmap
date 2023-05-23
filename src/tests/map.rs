@@ -195,6 +195,30 @@ fn test_expiration() {
     let _: String = shmap.get(&key).unwrap().unwrap();
 }
 
+#[test]
+fn test_many_fd() {
+    let shmap = Shmap::new();
+
+    // set fd limit to 42 for testing purpose
+    unsafe {
+        let rlim: libc::rlimit = libc::rlimit {
+            rlim_cur: 42,
+            rlim_max: 42,
+        };
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) != 0 {
+            let err = std::io::Error::last_os_error();
+            panic!("raise_fd_limit: error calling setrlimit: {}", err);
+        }
+    }
+
+    for i in 0..50 {
+        let key = rand_string(i);
+        shmap.insert(&key, "0").unwrap();
+    }
+
+    fdlimit::raise_fd_limit();
+}
+
 // test concurrency between set
 #[test]
 fn test_set_concurrency() {
