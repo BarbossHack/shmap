@@ -2,11 +2,36 @@
 //! Inspired by <https://github.com/unrelentingtech/shmemfdrs>
 
 use crate::errors::ShmapError;
+use memmap2::{MmapAsRawDesc, MmapRawDescriptor};
+use std::os::unix::io::RawFd;
 
 pub const SHM_DIR: &str = "/dev/shm";
 
+/// File descriptor struct, allowing to close fd on Drop
+pub struct Fd(RawFd);
+
+impl From<RawFd> for Fd {
+    fn from(value: RawFd) -> Self {
+        Fd(value)
+    }
+}
+
+impl MmapAsRawDesc for Fd {
+    fn as_raw_desc(&self) -> MmapRawDescriptor {
+        self.0.as_raw_desc()
+    }
+}
+
+impl Drop for Fd {
+    fn drop(&mut self) {
+        unsafe {
+            libc::close(self.0);
+        }
+    }
+}
+
 /// Open shm in readonly.
-pub fn shm_open_read(name: &str) -> Result<i32, ShmapError> {
+pub fn shm_open_read(name: &str) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDONLY)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -18,12 +43,12 @@ pub fn shm_open_read(name: &str) -> Result<i32, ShmapError> {
             Err(ShmapError::IOError(err))
         }
     } else {
-        Ok(fd)
+        Ok(fd.into())
     }
 }
 
 /// Open shm with read/write rights, and initialze it to `length`size.
-pub fn shm_open_write(name: &str, length: usize) -> Result<i32, ShmapError> {
+pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -36,11 +61,11 @@ pub fn shm_open_write(name: &str, length: usize) -> Result<i32, ShmapError> {
         let err = std::io::Error::last_os_error();
         Err(ShmapError::IOError(err))
     } else {
-        Ok(fd)
+        Ok(fd.into())
     }
 }
 
-fn shm_open(name: &str, flags: i32) -> Result<i32, ShmapError> {
+fn shm_open(name: &str, flags: i32) -> Result<RawFd, ShmapError> {
     let name = std::ffi::CString::new(name)?;
     let fd = unsafe { libc::shm_open(name.as_ptr(), flags, 0o600) };
     Ok(fd)

@@ -143,7 +143,6 @@ impl Shmap {
         } else {
             mmap.to_vec()
         };
-
         Ok(Some(bytes))
     }
 
