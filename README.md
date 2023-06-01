@@ -28,8 +28,7 @@ fn main() -> Result<(), ShmapError> {
 
     assert_eq!(Some("value".to_string()), value);
 
-    // We strongly advise to use Shmap with TTL to avoid opening too many file descriptors,
-    // or using too much RAM
+    // It is strongly advised to use TTL to avoid using too much RAM
     shmap.insert_with_ttl("key", "temporary_value", Duration::from_secs(60))?;
 
     Ok(())

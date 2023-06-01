@@ -32,6 +32,8 @@
 //!     // or using too much RAM
 //!     shmap.insert_with_ttl("key", "temporary_value", Duration::from_secs(60))?;
 //!
+//!     shmap.remove("key")?;
+//!
 //!     Ok(())
 //! }
 //! ```

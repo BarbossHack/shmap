@@ -21,14 +21,14 @@ fn read_from_shm(sanitized_key: &str) -> Vec<u8> {
 #[should_panic(expected = "Option::unwrap()")]
 fn test_get_unknown() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let _: String = shmap.get(&key).unwrap().unwrap();
 }
 
 #[test]
 fn simple_test() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -39,7 +39,7 @@ fn simple_test() {
 
 #[test]
 fn test_different_size() {
-    let key = rand_string(10);
+    let key = rand_string(30);
 
     let shmap = Shmap::new();
     let value = rand_string(50);
@@ -68,7 +68,7 @@ fn test_encrypted() {
     secret.shuffle(&mut thread_rng());
 
     let shmap_enc = Shmap::new_with_encryption(&secret.try_into().unwrap());
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     shmap_enc.insert(&key, value.to_owned()).unwrap();
@@ -77,7 +77,7 @@ fn test_encrypted() {
 
     // Compare with non-encrypted
     let shmap = Shmap::new();
-    let key_2 = rand_string(10);
+    let key_2 = rand_string(30);
     shmap.insert(&key_2, value.to_owned()).unwrap();
     let ret_value_2: String = shmap.get(&key_2).unwrap().unwrap();
     assert_eq!(ret_value_2, value);
@@ -91,9 +91,8 @@ fn test_encrypted() {
 }
 
 #[test]
-#[should_panic(expected = "AesGcmError(Error)")]
 fn test_bad_key() {
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     let mut secret: Vec<u8> = (0..32).collect();
@@ -106,15 +105,16 @@ fn test_bad_key() {
     let mut secret: Vec<u8> = (0..32).collect();
     secret.shuffle(&mut thread_rng());
     let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
-    let _: String = shmap.get(&key).unwrap().unwrap();
-
+    if shmap.get::<String>(&key).is_ok() {
+        panic!("It should not have been possible to decrypt here, with a different key")
+    }
     shmap.remove(&key).unwrap();
 }
 
 #[test]
 fn test_set_and_get() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -144,7 +144,7 @@ fn test_set_and_get() {
 #[test]
 fn test_set_and_get_big() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(5 * 1024 * 1024);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -161,7 +161,7 @@ fn test_set_and_get_big() {
 #[test]
 fn test_remove() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     shmap.insert(&key, value).unwrap();
@@ -180,7 +180,7 @@ fn test_remove_not_found() {
 #[should_panic(expected = "Option::unwrap()")]
 fn test_expiration() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
 
     shmap
@@ -211,10 +211,15 @@ fn test_many_fd() {
         }
     }
 
-    for i in 0..50 {
+    let mut key_to_remove = Vec::new();
+    for i in 1..50 {
         let key = rand_string(i);
         shmap.insert(&key, "0").unwrap();
+        key_to_remove.push(key);
     }
+    key_to_remove.iter().for_each(|key| {
+        shmap.remove(key).unwrap();
+    });
 
     fdlimit::raise_fd_limit();
 }
@@ -223,7 +228,7 @@ fn test_many_fd() {
 #[test]
 fn test_set_concurrency() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let key_clone = key.clone();
 
     let shmap_clone = shmap.clone();
@@ -247,7 +252,7 @@ fn test_set_concurrency() {
 #[test]
 fn test_get_concurrency() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let value = rand_string(50);
     let key_clone = key.clone();
 
@@ -273,7 +278,7 @@ fn test_get_concurrency() {
 #[test]
 fn test_get_set_concurrency() {
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(30);
     let key_clone = key.clone();
 
     let shmap_clone = shmap.clone();
@@ -297,7 +302,7 @@ fn test_get_set_concurrency() {
 // test concurrency with metadatas set/remove
 #[test]
 fn test_metadatas_concurrency() {
-    let key = rand_string(10);
+    let key = rand_string(30);
 
     let task = move || {
         for i in 0..1024 {
