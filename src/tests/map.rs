@@ -1,7 +1,7 @@
 use crate::{map::sanitize_key, shm::shm_open_read, Shmap};
 use memmap2::Mmap;
 use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 pub fn rand_string(len: usize) -> String {
     rand::thread_rng()
@@ -319,4 +319,24 @@ fn test_metadatas_concurrency() {
 
     t1.join().unwrap();
     t2.join().unwrap();
+}
+
+// test key listing
+#[test]
+fn test_list_keys() {
+    const NUM: usize = 5;
+    let shmap = Shmap::new();
+
+    let keys = (0..NUM).map(|i| rand_string(i)).collect::<HashSet<_>>();
+    keys.iter().for_each(|key| {
+        let value = rand_string(50);
+        shmap.insert(&key, value).unwrap();
+    });
+
+    // Other tests may run in parallel. Ensure that at least NUM keys are present.
+    assert!(shmap.keys().unwrap().len() >= NUM);
+
+    // At least all inserted keys must be present.
+    let current_keys = shmap.keys().unwrap().into_iter().collect();
+    assert!(keys.is_subset(&current_keys));
 }
