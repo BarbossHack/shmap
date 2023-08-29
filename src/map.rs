@@ -52,9 +52,16 @@ impl Shmap {
         });
 
         let shmap = Shmap { cipher };
-        if let Err(e) = shmap.clean() {
-            warn!("Error while cleaning shmap keys: {}", e)
-        }
+
+        // Run cleaning thread
+        let shmap_clone = shmap.clone();
+        std::thread::spawn(move || loop {
+            if let Err(e) = shmap_clone.clone().clean() {
+                warn!("Error while cleaning shmap keys: {}", e)
+            }
+            std::thread::sleep(Duration::from_secs(30));
+        });
+
         shmap
     }
 
