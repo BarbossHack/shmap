@@ -8,6 +8,7 @@ use std::os::unix::io::RawFd;
 pub const SHM_DIR: &str = "/dev/shm";
 
 /// File descriptor struct, allowing to close fd on Drop
+#[derive(Debug)]
 pub struct Fd(RawFd);
 
 impl From<RawFd> for Fd {

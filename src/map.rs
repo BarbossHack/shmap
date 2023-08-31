@@ -138,8 +138,14 @@ impl Shmap {
 
         // If an encryption key was provided, decrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
-            let nonce = Nonce::from_slice(&mmap[..12]);
-            cipher.decrypt(nonce, &mmap[12..])?
+            // Check length of data - must be at least 12 bytes for nonce
+            // otherwise it's not a valid nonce.
+            if mmap.len() < 12 {
+                return Ok(None);
+            } else {
+                let nonce = Nonce::from_slice(&mmap[..12]);
+                cipher.decrypt(nonce, &mmap[12..])?
+            }
         } else {
             mmap.to_vec()
         };
@@ -262,8 +268,7 @@ impl Shmap {
             if let Ok(dir_entry) = dir_entry_res {
                 let filename = dir_entry.file_name().to_string_lossy().to_string();
                 if filename.starts_with(SHMAP_PREFIX) && !filename.ends_with(METADATA_SUFFIX) {
-                    let metadata_filename =
-                        format!("{}.{}", dir_entry.path().to_string_lossy(), METADATA_SUFFIX);
+                    let metadata_filename = format!("{}.{}", filename, METADATA_SUFFIX);
                     match self.get_deserialize::<Metadata>(&metadata_filename) {
                         Ok(Some(metadata)) => match metadata.expiration {
                             Some(expiration) => {
