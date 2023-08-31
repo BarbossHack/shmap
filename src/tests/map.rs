@@ -1,7 +1,34 @@
 use crate::{map::sanitize_key, shm::shm_open_read, Shmap};
+use env_logger::fmt::Color;
+use log::LevelFilter;
 use memmap2::Mmap;
 use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
-use std::{collections::HashSet, time::Duration};
+use std::io::Write;
+use std::{collections::HashSet, str::FromStr, time::Duration};
+
+pub fn init_logger() {
+    let level = std::env::var("RUST_LOG").unwrap_or("debug".to_string());
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(LevelFilter::from_str(&level).unwrap())
+        .format(|buf, record| {
+            let mut style = buf.style();
+            style.set_bg(Color::Yellow).set_bold(true);
+
+            let timestamp = buf.timestamp();
+
+            writeln!(
+                buf,
+                "[{} {} {}:{}] {}",
+                timestamp,
+                record.level(),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or_default(),
+                style.value(record.args())
+            )
+        })
+        .try_init();
+}
 
 pub fn rand_string(len: usize) -> String {
     rand::thread_rng()
@@ -20,6 +47,8 @@ fn read_from_shm(sanitized_key: &str) -> Vec<u8> {
 #[test]
 #[should_panic(expected = "Option::unwrap()")]
 fn test_get_unknown() {
+    init_logger();
+
     let shmap = Shmap::new();
     let key = rand_string(30);
     let _: String = shmap.get(&key).unwrap().unwrap();
@@ -27,8 +56,10 @@ fn test_get_unknown() {
 
 #[test]
 fn simple_test() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(31);
     let value = rand_string(50);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -39,7 +70,9 @@ fn simple_test() {
 
 #[test]
 fn test_different_size() {
-    let key = rand_string(30);
+    init_logger();
+
+    let key = rand_string(32);
 
     let shmap = Shmap::new();
     let value = rand_string(50);
@@ -64,11 +97,13 @@ fn test_different_size() {
 
 #[test]
 fn test_encrypted() {
+    init_logger();
+
     let mut secret: Vec<u8> = (0..32).collect();
     secret.shuffle(&mut thread_rng());
 
     let shmap_enc = Shmap::new_with_encryption(&secret.try_into().unwrap());
-    let key = rand_string(30);
+    let key = rand_string(33);
     let value = rand_string(50);
 
     shmap_enc.insert(&key, value.to_owned()).unwrap();
@@ -77,7 +112,7 @@ fn test_encrypted() {
 
     // Compare with non-encrypted
     let shmap = Shmap::new();
-    let key_2 = rand_string(30);
+    let key_2 = rand_string(34);
     shmap.insert(&key_2, value.to_owned()).unwrap();
     let ret_value_2: String = shmap.get(&key_2).unwrap().unwrap();
     assert_eq!(ret_value_2, value);
@@ -92,7 +127,9 @@ fn test_encrypted() {
 
 #[test]
 fn test_bad_key() {
-    let key = rand_string(30);
+    init_logger();
+
+    let key = rand_string(35);
     let value = rand_string(50);
 
     let mut secret: Vec<u8> = (0..32).collect();
@@ -113,8 +150,10 @@ fn test_bad_key() {
 
 #[test]
 fn test_set_and_get() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(36);
     let value = rand_string(50);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -127,7 +166,7 @@ fn test_set_and_get() {
 
     shmap.remove(&key).unwrap();
 
-    let key = rand_string(10);
+    let key = rand_string(37);
     let value = vec!["Test".to_string(), "Vec".to_string()];
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -143,8 +182,10 @@ fn test_set_and_get() {
 
 #[test]
 fn test_set_and_get_big() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(38);
     let value = rand_string(5 * 1024 * 1024);
 
     shmap.insert(&key, value.to_owned()).unwrap();
@@ -160,8 +201,10 @@ fn test_set_and_get_big() {
 
 #[test]
 fn test_remove() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(39);
     let value = rand_string(50);
 
     shmap.insert(&key, value).unwrap();
@@ -171,16 +214,20 @@ fn test_remove() {
 
 #[test]
 fn test_remove_not_found() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(10);
+    let key = rand_string(40);
     shmap.remove(&key).unwrap();
 }
 
 #[test]
 #[should_panic(expected = "Option::unwrap()")]
 fn test_expiration() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(41);
     let value = rand_string(50);
 
     shmap
@@ -197,6 +244,8 @@ fn test_expiration() {
 
 #[test]
 fn test_many_fd() {
+    init_logger();
+
     let shmap = Shmap::new();
 
     // set fd limit to 42 for testing purpose
@@ -212,7 +261,7 @@ fn test_many_fd() {
     }
 
     let mut key_to_remove = Vec::new();
-    for i in 1..50 {
+    for i in 60..110 {
         let key = rand_string(i);
         shmap.insert(&key, "0").unwrap();
         key_to_remove.push(key);
@@ -227,8 +276,10 @@ fn test_many_fd() {
 // test concurrency between set
 #[test]
 fn test_set_concurrency() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(42);
     let key_clone = key.clone();
 
     let shmap_clone = shmap.clone();
@@ -251,8 +302,10 @@ fn test_set_concurrency() {
 // test concurrency between get
 #[test]
 fn test_get_concurrency() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(43);
     let value = rand_string(50);
     let key_clone = key.clone();
 
@@ -277,8 +330,10 @@ fn test_get_concurrency() {
 // test concurrency between set and get
 #[test]
 fn test_get_set_concurrency() {
+    init_logger();
+
     let shmap = Shmap::new();
-    let key = rand_string(30);
+    let key = rand_string(44);
     let key_clone = key.clone();
 
     let shmap_clone = shmap.clone();
@@ -302,7 +357,9 @@ fn test_get_set_concurrency() {
 // test concurrency with metadatas set/remove
 #[test]
 fn test_metadatas_concurrency() {
-    let key = rand_string(30);
+    init_logger();
+
+    let key = rand_string(45);
 
     let task = move || {
         for i in 0..1024 {
@@ -314,23 +371,25 @@ fn test_metadatas_concurrency() {
         }
     };
 
-    let t1 = std::thread::spawn(task.clone());
-    let t2 = std::thread::spawn(task);
-
-    t1.join().unwrap();
-    t2.join().unwrap();
+    let mut handles = Vec::new();
+    for _i in 0..10 {
+        handles.push(std::thread::spawn(task.clone()));
+    }
+    handles.into_iter().for_each(|t| t.join().unwrap());
 }
 
 // test key listing
 #[test]
 fn test_list_keys() {
+    init_logger();
+
     const NUM: usize = 5;
     let shmap = Shmap::new();
 
-    let keys = (0..NUM).map(|i| rand_string(i)).collect::<HashSet<_>>();
+    let keys = (0..NUM).map(rand_string).collect::<HashSet<_>>();
     keys.iter().for_each(|key| {
         let value = rand_string(50);
-        shmap.insert(&key, value).unwrap();
+        shmap.insert(key, value).unwrap();
     });
 
     // Other tests may run in parallel. Ensure that at least NUM keys are present.
@@ -339,4 +398,8 @@ fn test_list_keys() {
     // At least all inserted keys must be present.
     let current_keys = shmap.keys().unwrap().into_iter().collect();
     assert!(keys.is_subset(&current_keys));
+
+    keys.iter().for_each(|key| {
+        shmap.remove(key).unwrap();
+    });
 }

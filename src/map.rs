@@ -8,16 +8,21 @@ use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
 };
 use chrono::Utc;
-use log::warn;
+use log::{error, warn};
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
 use rand::{seq::SliceRandom, thread_rng};
 use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha224};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 const METADATA_SUFFIX: &str = "metadata";
 const SHMAP_PREFIX: &str = "shmap";
+const LOCK_SUFFIX: &str = "lock";
 
 #[derive(Clone)]
 pub struct Shmap {
@@ -71,6 +76,7 @@ impl Shmap {
                 Some(expiration) => {
                     let expired = Utc::now().gt(&expiration);
                     if expired {
+                        warn!("Key <{}> expired, removing", &key);
                         let _ = self.remove(key);
                     }
                     expired
@@ -112,7 +118,15 @@ impl Shmap {
     }
 
     fn _get(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
-        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
+        let lock = NamedLock::with_path(
+            PathBuf::from(SHM_DIR).join(
+                sanitized_key
+                    .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                    .to_string()
+                    + "."
+                    + LOCK_SUFFIX,
+            ),
+        )?;
         let guard = lock.lock()?;
 
         // Read the item from shm
@@ -121,7 +135,6 @@ impl Shmap {
             Err(e) => match e {
                 ShmapError::ShmFileNotFound => {
                     // If the shm returns "file not found", return None
-                    drop(guard);
                     //let _ = self._remove(sanitized_key); // useless
                     return Ok(None);
                 }
@@ -131,6 +144,7 @@ impl Shmap {
         let mmap = unsafe { Mmap::map(fd) }?;
         if mmap.len() == 0 {
             // If the value is empty, remove it and return None
+            error!("mmap file for item <{}> is empty, removing", sanitized_key);
             drop(guard);
             let _ = self._remove(sanitized_key);
             return Ok(None);
@@ -141,6 +155,10 @@ impl Shmap {
             // Check length of data - must be at least 12 bytes for nonce
             // otherwise it's not a valid nonce.
             if mmap.len() < 12 {
+                warn!(
+                    "mmap len for item <{}> is lower than nonce size, maybe corrupted",
+                    sanitized_key
+                );
                 return Ok(None);
             } else {
                 let nonce = Nonce::from_slice(&mmap[..12]);
@@ -215,7 +233,15 @@ impl Shmap {
             value.to_vec()
         };
 
-        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
+        let lock = NamedLock::with_path(
+            PathBuf::from(SHM_DIR).join(
+                sanitized_key
+                    .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                    .to_string()
+                    + "."
+                    + LOCK_SUFFIX,
+            ),
+        )?;
         let guard = lock.lock()?;
 
         // Insert the item to shm
@@ -247,8 +273,18 @@ impl Shmap {
     }
 
     fn _remove(&self, sanitized_key: &str) -> Result<(), ShmapError> {
-        let lock = NamedLock::with_path(PathBuf::from(SHM_DIR).join(sanitized_key))?;
-        let _guard = lock.lock()?;
+        if !sanitized_key.ends_with(LOCK_SUFFIX) {
+            let lock = NamedLock::with_path(
+                PathBuf::from(SHM_DIR).join(
+                    sanitized_key
+                        .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                        .to_string()
+                        + "."
+                        + LOCK_SUFFIX,
+                ),
+            )?;
+            let _guard = lock.lock()?;
+        }
 
         shm_unlink(sanitized_key)?;
 
@@ -263,49 +299,77 @@ impl Shmap {
     /// Clean expired items.
     pub fn clean(&self) -> Result<Vec<String>, ShmapError> {
         let mut keys = Vec::<String>::new();
-        let read_dir = std::fs::read_dir(PathBuf::from(SHM_DIR))?;
-        read_dir.into_iter().for_each(|dir_entry_res| {
-            if let Ok(dir_entry) = dir_entry_res {
-                let filename = dir_entry.file_name().to_string_lossy().to_string();
-                if filename.starts_with(SHMAP_PREFIX) && !filename.ends_with(METADATA_SUFFIX) {
-                    let metadata_filename = format!("{}.{}", filename, METADATA_SUFFIX);
-                    match self.get_deserialize::<Metadata>(&metadata_filename) {
-                        Ok(Some(metadata)) => match metadata.expiration {
-                            Some(expiration) => {
-                                if Utc::now().gt(&expiration) {
-                                    // Expired, remove item and metadata
-                                    let _ = self._remove(&filename);
-                                    let _ = self._remove(&metadata_filename);
-                                } else {
-                                    // Not expired, add to list
-                                    keys.push(metadata.key);
-                                }
-                            }
-                            None => {
-                                // Not expiration, add to list
+        for dir_entry in (std::fs::read_dir(PathBuf::from(SHM_DIR))?).flatten() {
+            let filename = dir_entry.file_name().to_string_lossy().to_string();
+            let Ok(metadata) = fs::metadata(format!("{SHM_DIR}/{filename}")) else { continue };
+            let Ok(modified_time) = metadata.modified() else { continue };
+            let Ok(duration_since_modified_time) = SystemTime::now().duration_since(modified_time) else { continue };
+            if filename.starts_with(SHMAP_PREFIX)
+                && !filename.ends_with(METADATA_SUFFIX)
+                && !filename.ends_with(LOCK_SUFFIX)
+            {
+                let metadata_filename = format!("{}.{}", filename, METADATA_SUFFIX);
+                match self.get_deserialize::<Metadata>(&metadata_filename) {
+                    Ok(Some(metadata)) => match metadata.expiration {
+                        Some(expiration) => {
+                            if Utc::now().gt(&expiration) {
+                                // Expired, remove item and metadata
+                                warn!("[clean] Item <{}> expired, removing", &filename);
+                                let _ = self._remove(&filename);
+                                let _ = self._remove(&metadata_filename);
+                            } else {
+                                // Not expired, add to list
                                 keys.push(metadata.key);
                             }
-                        },
-                        Ok(None) => {
+                        }
+                        None => {
+                            // Not expiration, add to list
+                            keys.push(metadata.key);
+                        }
+                    },
+                    Ok(None) => {
+                        if duration_since_modified_time > Duration::from_secs(5) {
                             // Item exists, but metadata not found, remove item
+                            warn!("[clean] Item <{}> metadata not found, removing", &filename);
                             let _ = self._remove(&filename);
                         }
-                        Err(_) => {
-                            // Can't deserialized metadata or something else happens
-                        }
                     }
-                } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(METADATA_SUFFIX)
-                {
-                    let filename_path = dir_entry.path().to_string_lossy().to_string();
-                    let item_filename =
-                        filename_path.trim_end_matches(&format!(".{}", METADATA_SUFFIX));
-                    if !PathBuf::from(item_filename).exists() {
-                        // Metadata exists, but item not found, remove metadata
-                        let _ = self._remove(&filename);
+                    Err(e) => {
+                        // Can't deserialized metadata or something else happens
+                        error!(
+                            "[clean] Could not get metadata for item <{}> : {}",
+                            &filename, e
+                        );
                     }
                 }
+            } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(METADATA_SUFFIX) {
+                let filename_path = dir_entry.path().to_string_lossy().to_string();
+                let item_filename =
+                    filename_path.trim_end_matches(&format!(".{}", METADATA_SUFFIX));
+                if !PathBuf::from(item_filename).exists()
+                    && duration_since_modified_time > Duration::from_secs(5)
+                {
+                    warn!(
+                        "[clean] Metadata <{}> exists, but item not found, removing metadata",
+                        &filename
+                    );
+                    let _ = self._remove(&filename);
+                }
+            } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(LOCK_SUFFIX) {
+                let filename_path = dir_entry.path().to_string_lossy().to_string();
+                let item_filename = filename_path.trim_end_matches(&format!(".{}", LOCK_SUFFIX));
+                if !PathBuf::from(item_filename).exists()
+                    && !PathBuf::from(format!("{}.{}", item_filename, METADATA_SUFFIX)).exists()
+                    && duration_since_modified_time > Duration::from_secs(5)
+                {
+                    warn!(
+                        "[clean] Lock <{}> exists, but item not found, removing",
+                        &filename
+                    );
+                    let _ = self._remove(&filename);
+                }
             }
-        });
+        }
         Ok(keys)
     }
 }
@@ -322,10 +386,15 @@ fn sanitize_metadata_key(key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests::map::rand_string, Shmap};
+    use crate::{
+        tests::map::{init_logger, rand_string},
+        Shmap,
+    };
 
     #[test]
     fn test_metadatas_presence() {
+        init_logger();
+
         let shmap = Shmap::new();
         let key = rand_string(10);
         let value = rand_string(50);
