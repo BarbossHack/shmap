@@ -301,9 +301,16 @@ impl Shmap {
         let mut keys = Vec::<String>::new();
         for dir_entry in (std::fs::read_dir(PathBuf::from(SHM_DIR))?).flatten() {
             let filename = dir_entry.file_name().to_string_lossy().to_string();
-            let Ok(metadata) = fs::metadata(format!("{SHM_DIR}/{filename}")) else { continue };
-            let Ok(modified_time) = metadata.modified() else { continue };
-            let Ok(duration_since_modified_time) = SystemTime::now().duration_since(modified_time) else { continue };
+            let Ok(metadata) = fs::metadata(format!("{SHM_DIR}/{filename}")) else {
+                continue;
+            };
+            let Ok(modified_time) = metadata.modified() else {
+                continue;
+            };
+            let Ok(duration_since_modified_time) = SystemTime::now().duration_since(modified_time)
+            else {
+                continue;
+            };
             if filename.starts_with(SHMAP_PREFIX)
                 && !filename.ends_with(METADATA_SUFFIX)
                 && !filename.ends_with(LOCK_SUFFIX)
