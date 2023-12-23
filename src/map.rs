@@ -48,7 +48,9 @@ impl Shmap {
     }
 
     fn _new(encryption_key: Option<&[u8; 32]>) -> Self {
-        fdlimit::raise_fd_limit();
+        if let Err(e) = fdlimit::raise_fd_limit() {
+            warn!("Could not set fd_limit : {e}");
+        }
 
         // If an encryption key was provided, create a `cipher` for AES256-GCM
         let cipher = encryption_key.map(|key| {

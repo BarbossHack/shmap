@@ -270,7 +270,7 @@ fn test_many_fd() {
         shmap.remove(key).unwrap();
     });
 
-    fdlimit::raise_fd_limit();
+    fdlimit::raise_fd_limit().unwrap();
 }
 
 // test concurrency between set
