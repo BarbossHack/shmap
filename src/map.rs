@@ -38,11 +38,13 @@ impl Default for Shmap {
 
 impl Shmap {
     /// Initialize Shmap with no TTL or encryption.
+    #[must_use]
     pub fn new() -> Self {
         Shmap::_new(None)
     }
 
     /// Initialize Shmap with AES256 encryption key (random bytes).
+    #[must_use]
     pub fn new_with_encryption(encryption_key: &[u8; 32]) -> Self {
         Shmap::_new(Some(encryption_key))
     }
@@ -60,7 +62,7 @@ impl Shmap {
 
         let shmap = Shmap { cipher };
         if let Err(e) = shmap.clean() {
-            warn!("Error while cleaning shmap keys: {}", e)
+            warn!("Error while cleaning shmap keys: {}", e);
         }
         shmap
     }
@@ -123,7 +125,7 @@ impl Shmap {
         let lock = NamedLock::with_path(
             PathBuf::from(SHM_DIR).join(
                 sanitized_key
-                    .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                    .trim_end_matches(&format!(".{METADATA_SUFFIX}"))
                     .to_string()
                     + "."
                     + LOCK_SUFFIX,
@@ -143,6 +145,7 @@ impl Shmap {
                 e => return Err(e),
             },
         };
+        // SAFETY: Mmap call is unsafe
         let mmap = unsafe { Mmap::map(fd) }?;
         if mmap.len() == 0 {
             // If the value is empty, remove it and return None
@@ -162,10 +165,9 @@ impl Shmap {
                     sanitized_key
                 );
                 return Ok(None);
-            } else {
-                let nonce = Nonce::from_slice(&mmap[..12]);
-                cipher.decrypt(nonce, &mmap[12..])?
             }
+            let nonce = Nonce::from_slice(&mmap[..12]);
+            cipher.decrypt(nonce, &mmap[12..])?
         } else {
             mmap.to_vec()
         };
@@ -238,7 +240,7 @@ impl Shmap {
         let lock = NamedLock::with_path(
             PathBuf::from(SHM_DIR).join(
                 sanitized_key
-                    .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                    .trim_end_matches(&format!(".{METADATA_SUFFIX}"))
                     .to_string()
                     + "."
                     + LOCK_SUFFIX,
@@ -249,11 +251,12 @@ impl Shmap {
         // Insert the item to shm
         match || -> Result<(), ShmapError> {
             let fd = shm_open_write(sanitized_key, bytes.len())?;
+            // SAFETY: libc call is unsafe
             let mut mmap = unsafe { MmapMut::map_mut(fd) }?;
             mmap.copy_from_slice(bytes.as_slice());
             Ok(())
         }() {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => {
                 drop(guard);
                 let _ = self._remove(sanitized_key);
@@ -279,7 +282,7 @@ impl Shmap {
             let lock = NamedLock::with_path(
                 PathBuf::from(SHM_DIR).join(
                     sanitized_key
-                        .trim_end_matches(&format!(".{}", METADATA_SUFFIX))
+                        .trim_end_matches(&format!(".{METADATA_SUFFIX}"))
                         .to_string()
                         + "."
                         + LOCK_SUFFIX,
@@ -317,7 +320,7 @@ impl Shmap {
                 && !filename.ends_with(METADATA_SUFFIX)
                 && !filename.ends_with(LOCK_SUFFIX)
             {
-                let metadata_filename = format!("{}.{}", filename, METADATA_SUFFIX);
+                let metadata_filename = format!("{filename}.{METADATA_SUFFIX}");
                 match self.get_deserialize::<Metadata>(&metadata_filename) {
                     Ok(Some(metadata)) => match metadata.expiration {
                         Some(expiration) => {
@@ -353,8 +356,7 @@ impl Shmap {
                 }
             } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(METADATA_SUFFIX) {
                 let filename_path = dir_entry.path().to_string_lossy().to_string();
-                let item_filename =
-                    filename_path.trim_end_matches(&format!(".{}", METADATA_SUFFIX));
+                let item_filename = filename_path.trim_end_matches(&format!(".{METADATA_SUFFIX}"));
                 if !PathBuf::from(item_filename).exists()
                     && duration_since_modified_time > Duration::from_secs(5)
                 {
@@ -366,9 +368,9 @@ impl Shmap {
                 }
             } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(LOCK_SUFFIX) {
                 let filename_path = dir_entry.path().to_string_lossy().to_string();
-                let item_filename = filename_path.trim_end_matches(&format!(".{}", LOCK_SUFFIX));
+                let item_filename = filename_path.trim_end_matches(&format!(".{LOCK_SUFFIX}"));
                 if !PathBuf::from(item_filename).exists()
-                    && !PathBuf::from(format!("{}.{}", item_filename, METADATA_SUFFIX)).exists()
+                    && !PathBuf::from(format!("{item_filename}.{METADATA_SUFFIX}")).exists()
                     && duration_since_modified_time > Duration::from_secs(5)
                 {
                     warn!(
