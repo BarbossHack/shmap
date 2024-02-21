@@ -1,4 +1,5 @@
-use crate::{map::sanitize_key, shm::shm_open_read, Shmap};
+use crate::shm;
+use crate::{map::sanitize_key, Shmap};
 use log::LevelFilter;
 use memmap2::Mmap;
 use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
@@ -6,7 +7,7 @@ use std::io::Write;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
 pub fn init_logger() {
-    let level = std::env::var("RUST_LOG").unwrap_or("debug".to_string());
+    let level = std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string());
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(LevelFilter::from_str(&level).unwrap())
@@ -35,7 +36,7 @@ pub fn rand_string(len: usize) -> String {
 }
 
 fn read_from_shm(sanitized_key: &str) -> Vec<u8> {
-    let fd = shm_open_read(sanitized_key).unwrap();
+    let fd = shm::open_read(sanitized_key).unwrap();
     // SAFETY: Mmap call is unsafe
     let mmap = unsafe { Mmap::map(fd) }.unwrap();
     mmap.to_vec()

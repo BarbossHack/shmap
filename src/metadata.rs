@@ -25,7 +25,7 @@ impl Metadata {
             None => None,
         };
 
-        Ok(Metadata {
+        Ok(Self {
             key: key.to_owned(),
             expiration,
             encrypted,

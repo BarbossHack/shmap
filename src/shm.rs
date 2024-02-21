@@ -13,7 +13,7 @@ pub struct Fd(RawFd);
 
 impl From<RawFd> for Fd {
     fn from(value: RawFd) -> Self {
-        Fd(value)
+        Self(value)
     }
 }
 
@@ -33,7 +33,7 @@ impl Drop for Fd {
 }
 
 /// Open shm in readonly.
-pub fn shm_open_read(name: &str) -> Result<Fd, ShmapError> {
+pub fn open_read(name: &str) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDONLY)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -50,7 +50,7 @@ pub fn shm_open_read(name: &str) -> Result<Fd, ShmapError> {
 }
 
 /// Open shm with read/write rights, and initialze it to `length`size.
-pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
+pub fn open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -59,6 +59,7 @@ pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
     }
 
     // SAFETY: libc call is unsafe
+    #[allow(clippy::cast_possible_wrap)]
     let ret = unsafe { libc::ftruncate(fd, length as libc::off_t) };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
@@ -76,10 +77,10 @@ fn shm_open(name: &str, flags: i32) -> Result<RawFd, ShmapError> {
 }
 
 /// Unlink (remove) shm by its name.
-pub fn shm_unlink(name: &str) -> Result<(), ShmapError> {
-    let name = std::ffi::CString::new(name)?;
+pub fn unlink(name: &str) -> Result<(), ShmapError> {
+    let c_name = std::ffi::CString::new(name)?;
     // SAFETY: libc call is unsafe
-    let ret = unsafe { libc::shm_unlink(name.as_ptr()) };
+    let ret = unsafe { libc::shm_unlink(c_name.as_ptr()) };
     // returns 0 on success, or -1 on error
     if ret != 0 {
         let err = std::io::Error::last_os_error();
