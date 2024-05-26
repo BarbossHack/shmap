@@ -13,7 +13,7 @@ pub struct Fd(RawFd);
 
 impl From<RawFd> for Fd {
     fn from(value: RawFd) -> Self {
-        Fd(value)
+        Self(value)
     }
 }
 
@@ -25,6 +25,7 @@ impl MmapAsRawDesc for Fd {
 
 impl Drop for Fd {
     fn drop(&mut self) {
+        // SAFETY: libc call is unsafe
         unsafe {
             libc::close(self.0);
         }
@@ -32,7 +33,7 @@ impl Drop for Fd {
 }
 
 /// Open shm in readonly.
-pub fn shm_open_read(name: &str) -> Result<Fd, ShmapError> {
+pub fn open_read(name: &str) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDONLY)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -49,7 +50,7 @@ pub fn shm_open_read(name: &str) -> Result<Fd, ShmapError> {
 }
 
 /// Open shm with read/write rights, and initialze it to `length`size.
-pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
+pub fn open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
     let fd = shm_open(name, libc::O_RDWR | libc::O_CREAT | libc::O_TRUNC)?;
     // On success, returns a file descriptor (a nonnegative integer)
     if fd < 0 {
@@ -57,6 +58,8 @@ pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
         return Err(ShmapError::IOError(err));
     }
 
+    // SAFETY: libc call is unsafe
+    #[allow(clippy::cast_possible_wrap)]
     let ret = unsafe { libc::ftruncate(fd, length as libc::off_t) };
     if ret != 0 {
         let err = std::io::Error::last_os_error();
@@ -68,14 +71,16 @@ pub fn shm_open_write(name: &str, length: usize) -> Result<Fd, ShmapError> {
 
 fn shm_open(name: &str, flags: i32) -> Result<RawFd, ShmapError> {
     let name = std::ffi::CString::new(name)?;
+    // SAFETY: libc call is unsafe
     let fd = unsafe { libc::shm_open(name.as_ptr(), flags, 0o600) };
     Ok(fd)
 }
 
 /// Unlink (remove) shm by its name.
-pub fn shm_unlink(name: &str) -> Result<(), ShmapError> {
-    let name = std::ffi::CString::new(name)?;
-    let ret = unsafe { libc::shm_unlink(name.as_ptr()) };
+pub fn unlink(name: &str) -> Result<(), ShmapError> {
+    let c_name = std::ffi::CString::new(name)?;
+    // SAFETY: libc call is unsafe
+    let ret = unsafe { libc::shm_unlink(c_name.as_ptr()) };
     // returns 0 on success, or -1 on error
     if ret != 0 {
         let err = std::io::Error::last_os_error();

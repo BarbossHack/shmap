@@ -1,5 +1,5 @@
-use crate::{map::sanitize_key, shm::shm_open_read, Shmap};
-use env_logger::fmt::Color;
+use crate::shm;
+use crate::{map::sanitize_key, Shmap};
 use log::LevelFilter;
 use memmap2::Mmap;
 use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
@@ -7,14 +7,11 @@ use std::io::Write;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
 pub fn init_logger() {
-    let level = std::env::var("RUST_LOG").unwrap_or("debug".to_string());
+    let level = std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string());
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(LevelFilter::from_str(&level).unwrap())
         .format(|buf, record| {
-            let mut style = buf.style();
-            style.set_bg(Color::Yellow).set_bold(true);
-
             let timestamp = buf.timestamp();
 
             writeln!(
@@ -24,7 +21,7 @@ pub fn init_logger() {
                 record.level(),
                 record.file().unwrap_or("unknown"),
                 record.line().unwrap_or_default(),
-                style.value(record.args())
+                record.args()
             )
         })
         .try_init();
@@ -39,7 +36,8 @@ pub fn rand_string(len: usize) -> String {
 }
 
 fn read_from_shm(sanitized_key: &str) -> Vec<u8> {
-    let fd = shm_open_read(sanitized_key).unwrap();
+    let fd = shm::open_read(sanitized_key).unwrap();
+    // SAFETY: Mmap call is unsafe
     let mmap = unsafe { Mmap::map(fd) }.unwrap();
     mmap.to_vec()
 }
@@ -62,7 +60,7 @@ fn simple_test() {
     let key = rand_string(31);
     let value = rand_string(50);
 
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
     shmap.remove(&key).unwrap();
@@ -76,19 +74,19 @@ fn test_different_size() {
 
     let shmap = Shmap::new();
     let value = rand_string(50);
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
     let shmap = Shmap::new();
     let value = rand_string(100);
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
     let shmap = Shmap::new();
     let value = rand_string(20);
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
@@ -106,14 +104,14 @@ fn test_encrypted() {
     let key = rand_string(33);
     let value = rand_string(50);
 
-    shmap_enc.insert(&key, value.to_owned()).unwrap();
+    shmap_enc.insert(&key, value.clone()).unwrap();
     let ret_value_1: String = shmap_enc.get(&key).unwrap().unwrap();
     assert_eq!(ret_value_1, value);
 
     // Compare with non-encrypted
     let shmap = Shmap::new();
     let key_2 = rand_string(34);
-    shmap.insert(&key_2, value.to_owned()).unwrap();
+    shmap.insert(&key_2, value.clone()).unwrap();
     let ret_value_2: String = shmap.get(&key_2).unwrap().unwrap();
     assert_eq!(ret_value_2, value);
     assert_eq!(ret_value_1, ret_value_2);
@@ -135,16 +133,17 @@ fn test_bad_key() {
     let mut secret: Vec<u8> = (0..32).collect();
     secret.shuffle(&mut thread_rng());
     let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
     let mut secret: Vec<u8> = (0..32).collect();
     secret.shuffle(&mut thread_rng());
     let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
-    if shmap.get::<String>(&key).is_ok() {
-        panic!("It should not have been possible to decrypt here, with a different key")
-    }
+    assert!(
+        shmap.get::<String>(&key).is_err(),
+        "It should not have been possible to decrypt here, with a different key"
+    );
     shmap.remove(&key).unwrap();
 }
 
@@ -156,7 +155,7 @@ fn test_set_and_get() {
     let key = rand_string(36);
     let value = rand_string(50);
 
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
 
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
@@ -169,7 +168,7 @@ fn test_set_and_get() {
     let key = rand_string(37);
     let value = vec!["Test".to_string(), "Vec".to_string()];
 
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
 
     let ret_value: Vec<String> = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
@@ -188,7 +187,7 @@ fn test_set_and_get_big() {
     let key = rand_string(38);
     let value = rand_string(5 * 1024 * 1024);
 
-    shmap.insert(&key, value.to_owned()).unwrap();
+    shmap.insert(&key, value.clone()).unwrap();
 
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
@@ -231,7 +230,7 @@ fn test_expiration() {
     let value = rand_string(50);
 
     shmap
-        .insert_with_ttl(&key, value.to_owned(), Duration::from_millis(200))
+        .insert_with_ttl(&key, value.clone(), Duration::from_millis(200))
         .unwrap();
     shmap.clean().unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
@@ -248,6 +247,7 @@ fn test_many_fd() {
 
     let shmap = Shmap::new();
 
+    // SAFETY: libc call is unsafe
     // set fd limit to 42 for testing purpose
     unsafe {
         let rlim: libc::rlimit = libc::rlimit {
@@ -256,7 +256,7 @@ fn test_many_fd() {
         };
         if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) != 0 {
             let err = std::io::Error::last_os_error();
-            panic!("raise_fd_limit: error calling setrlimit: {}", err);
+            panic!("raise_fd_limit: error calling setrlimit: {err}");
         }
     }
 
@@ -266,9 +266,9 @@ fn test_many_fd() {
         shmap.insert(&key, "0").unwrap();
         key_to_remove.push(key);
     }
-    key_to_remove.iter().for_each(|key| {
+    for key in &key_to_remove {
         shmap.remove(key).unwrap();
-    });
+    }
 
     fdlimit::raise_fd_limit().unwrap();
 }
@@ -340,7 +340,7 @@ fn test_get_set_concurrency() {
     let task = move || {
         for i in 0..1024 {
             let value = rand_string(i);
-            shmap_clone.insert(&key, value.to_owned()).unwrap();
+            shmap_clone.insert(&key, value.clone()).unwrap();
             let _: String = shmap_clone.get(&key).unwrap().unwrap();
         }
     };
@@ -365,7 +365,7 @@ fn test_metadatas_concurrency() {
         for i in 0..1024 {
             let shmap = Shmap::new();
             let value = rand_string(i);
-            shmap.insert(&key, value.to_owned()).unwrap();
+            shmap.insert(&key, value.clone()).unwrap();
             let _: Option<String> = shmap.get(&key).unwrap();
             shmap.remove(&key).unwrap();
         }
@@ -381,16 +381,16 @@ fn test_metadatas_concurrency() {
 // test key listing
 #[test]
 fn test_list_keys() {
+    const NUM: usize = 5;
     init_logger();
 
-    const NUM: usize = 5;
     let shmap = Shmap::new();
 
     let keys = (0..NUM).map(rand_string).collect::<HashSet<_>>();
-    keys.iter().for_each(|key| {
+    for key in &keys {
         let value = rand_string(50);
         shmap.insert(key, value).unwrap();
-    });
+    }
 
     // Other tests may run in parallel. Ensure that at least NUM keys are present.
     assert!(shmap.keys().unwrap().len() >= NUM);
@@ -399,7 +399,7 @@ fn test_list_keys() {
     let current_keys = shmap.keys().unwrap().into_iter().collect();
     assert!(keys.is_subset(&current_keys));
 
-    keys.iter().for_each(|key| {
+    for key in &keys {
         shmap.remove(key).unwrap();
-    });
+    }
 }
