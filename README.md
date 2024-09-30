@@ -1,10 +1,10 @@
 # **Shmap**
 
-**A key-value store based on unix shared-memory files (shm) for persisting state across program restarts.**
+**A key-value store based on linux shared-memory files (shm) for persisting state across program restarts.**
 
 ## Features
 
-- Items are stored in the unix shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
+- Items are stored in the linux shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
 
 - Concurrent access to items it provided thanks to `named-lock` mutexes.
 
@@ -33,4 +33,14 @@ fn main() -> Result<(), ShmapError> {
 
     Ok(())
 }
+```
+
+## Supported OS
+
+Any POSIX linux where `/dev/shm` is mounted. MacOS and any BSD descendants are therefore not supported.
+
+> [man shm_open(3)](https://man7.org/linux/man-pages/man3/shm_open.3.html)
+
+```text
+The POSIX shared memory object implementation on Linux makes use of a dedicated tmpfs(5) filesystem that is normally mounted under /dev/shm.
 ```

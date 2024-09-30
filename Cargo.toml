@@ -1,7 +1,7 @@
 [package]
 authors = ["BarbossHack <barbossh4ck@protonmail.com>"]
 categories = ["database-implementations", "concurrency", "data-structures", "caching"]
-description = "A key-value store based on unix shared-memory files (shm) for persisting state across program restarts."
+description = "A key-value store based on linux shared-memory files (shm) for persisting state across program restarts."
 edition = "2021"
 homepage = "https://github.com/BarbossHack/shmap"
 keywords = ["shm", "shared-memory", "inter-process", "store", "ramfs"]
@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 name = "shmap"
 readme = "README.md"
 repository = "https://github.com/BarbossHack/shmap"
-version = "0.4.6"
+version = "0.4.7"
 
 [dependencies]
 aes-gcm = { version = "0.10", features = ["std"] }

@@ -1,10 +1,10 @@
 //! # **Shmap**
 //!
-//! **A key-value store based on unix shared-memory files (shm) for persisting state across program restarts.**
+//! **A key-value store based on linux shared-memory files (shm) for persisting state across program restarts.**
 //!
 //! ## Features
 //!
-//! - Items are stored in the unix shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
+//! - Items are stored in the linux shared memory: it uses `shm_open` to create file in the ramdisk (/dev/shm), then they are mapped in memory with mmap.
 //!
 //! - Concurrent access to items it provided thanks to `named-lock` mutexes.
 //!
