@@ -4,15 +4,15 @@ use crate::{
     shm::{self, SHM_DIR},
 };
 use aes_gcm::{
-    aead::{generic_array::GenericArray, Aead},
     Aes256Gcm, KeyInit, Nonce,
+    aead::{Aead, generic_array::GenericArray},
 };
 use chrono::Utc;
 use log::{error, warn};
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
-use rand::{seq::SliceRandom, thread_rng};
-use serde::{de::DeserializeOwned, Serialize};
+use rand::seq::SliceRandom;
+use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha224};
 use std::{
     fs,
@@ -76,7 +76,7 @@ impl Shmap {
 
         // Remove item if expired
         let not_found = match self.get_metadata(key)? {
-            Some(metadata) => metadata.expiration.map_or(false, |expiration| {
+            Some(metadata) => metadata.expiration.is_some_and(|expiration| {
                 let expired = Utc::now().gt(&expiration);
                 if expired {
                     warn!("Key <{}> expired, removing", &key);
@@ -102,7 +102,7 @@ impl Shmap {
     where
         T: DeserializeOwned,
     {
-        match self._get(sanitized_key)? {
+        match self.get_internal(sanitized_key)? {
             Some(bytes) => {
                 let (value, _): (T, usize) =
                     bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
@@ -115,10 +115,10 @@ impl Shmap {
     /// Get an item by its key, without deserialization, as bytes.
     pub fn get_raw(&self, key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
         let sanitized_key = sanitize_key(key);
-        self._get(&sanitized_key)
+        self.get_internal(&sanitized_key)
     }
 
-    fn _get(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
+    fn get_internal(&self, sanitized_key: &str) -> Result<Option<Vec<u8>>, ShmapError> {
         let lock = NamedLock::with_path(
             PathBuf::from(SHM_DIR).join(
                 sanitized_key
@@ -148,7 +148,7 @@ impl Shmap {
             // If the value is empty, remove it and return None
             error!("mmap file for item <{}> is empty, removing", sanitized_key);
             drop(guard);
-            let _ = self._remove(sanitized_key);
+            let _ = self.remove_internal(sanitized_key);
             return Ok(None);
         }
 
@@ -199,7 +199,7 @@ impl Shmap {
         ttl: Duration,
     ) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
-        self._insert(&sanitized_key, value)?;
+        self.insert_internal(&sanitized_key, value)?;
         self.insert_metadata(Metadata::new(key, Some(ttl), self.cipher.is_some())?)
     }
 
@@ -213,21 +213,21 @@ impl Shmap {
         T: Serialize,
     {
         let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
-        self._insert(sanitized_key, &bytes)
+        self.insert_internal(sanitized_key, &bytes)
     }
 
     /// Insert a new item, without serialization.
     pub fn insert_raw(&self, key: &str, value: &[u8]) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
-        self._insert(&sanitized_key, value)
+        self.insert_internal(&sanitized_key, value)
     }
 
-    fn _insert(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
+    fn insert_internal(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
         // If an encryption key was provided, encrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
-            let mut nonce: Vec<u8> = (0..12).collect();
-            nonce.shuffle(&mut thread_rng());
-            let mut ciphertext = cipher.encrypt(Nonce::from_slice(nonce.as_slice()), value)?;
+            let mut nonce: Vec<u8> = vec![0; 12];
+            nonce.shuffle(&mut rand::rng());
+            let mut ciphertext = cipher.encrypt(Nonce::from_slice(&nonce), value)?;
             nonce.append(&mut ciphertext);
             nonce
         } else {
@@ -258,7 +258,7 @@ impl Shmap {
             Ok(()) => Ok(()),
             Err(e) => {
                 drop(guard);
-                let _ = self._remove(sanitized_key);
+                let _ = self.remove_internal(sanitized_key);
                 Err(e)
             }
         }
@@ -267,17 +267,17 @@ impl Shmap {
     /// Remove an item by its key.
     pub fn remove(&self, key: &str) -> Result<(), ShmapError> {
         let sanitized_key = sanitize_key(key);
-        self._remove(&sanitized_key)?;
+        self.remove_internal(&sanitized_key)?;
         self.remove_metadata(key)
     }
 
     fn remove_metadata(&self, key: &str) -> Result<(), ShmapError> {
         let sanitize_metadata_key = sanitize_metadata_key(key);
-        self._remove(&sanitize_metadata_key)
+        self.remove_internal(&sanitize_metadata_key)
     }
 
     #[allow(clippy::unused_self)]
-    fn _remove(&self, sanitized_key: &str) -> Result<(), ShmapError> {
+    fn remove_internal(&self, sanitized_key: &str) -> Result<(), ShmapError> {
         if !sanitized_key.ends_with(LOCK_SUFFIX) {
             let lock = NamedLock::with_path(
                 PathBuf::from(SHM_DIR).join(
@@ -327,8 +327,8 @@ impl Shmap {
                             if Utc::now().gt(&expiration) {
                                 // Expired, remove item and metadata
                                 warn!("[clean] Item <{}> expired, removing", &filename);
-                                let _ = self._remove(&filename);
-                                let _ = self._remove(&metadata_filename);
+                                let _ = self.remove_internal(&filename);
+                                let _ = self.remove_internal(&metadata_filename);
                             } else {
                                 // Not expired, add to list
                                 keys.push(metadata.key);
@@ -343,7 +343,7 @@ impl Shmap {
                         if duration_since_modified_time > Duration::from_secs(5) {
                             // Item exists, but metadata not found, remove item
                             warn!("[clean] Item <{}> metadata not found, removing", &filename);
-                            let _ = self._remove(&filename);
+                            let _ = self.remove_internal(&filename);
                         }
                     }
                     Err(e) => {
@@ -364,7 +364,7 @@ impl Shmap {
                         "[clean] Metadata <{}> exists, but item not found, removing metadata",
                         &filename
                     );
-                    let _ = self._remove(&filename);
+                    let _ = self.remove_internal(&filename);
                 }
             } else if filename.starts_with(SHMAP_PREFIX) && filename.ends_with(LOCK_SUFFIX) {
                 let filename_path = dir_entry.path().to_string_lossy().to_string();
@@ -377,7 +377,7 @@ impl Shmap {
                         "[clean] Lock <{}> exists, but item not found, removing",
                         &filename
                     );
-                    let _ = self._remove(&filename);
+                    let _ = self.remove_internal(&filename);
                 }
             }
         }
@@ -398,8 +398,8 @@ fn sanitize_metadata_key(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        tests::map::{init_logger, rand_string},
         Shmap,
+        tests::map::{init_logger, rand_string},
     };
 
     #[test]

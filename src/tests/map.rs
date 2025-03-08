@@ -1,8 +1,9 @@
 use crate::shm;
-use crate::{map::sanitize_key, Shmap};
+use crate::{Shmap, map::sanitize_key};
 use log::LevelFilter;
 use memmap2::Mmap;
-use rand::{distributions::Alphanumeric, prelude::SliceRandom, thread_rng, Rng};
+use rand::distr::Alphanumeric;
+use rand::{Rng, prelude::SliceRandom};
 use std::io::Write;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
@@ -28,7 +29,7 @@ pub fn init_logger() {
 }
 
 pub fn rand_string(len: usize) -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(len)
         .map(char::from)
@@ -98,7 +99,7 @@ fn test_encrypted() {
     init_logger();
 
     let mut secret: Vec<u8> = (0..32).collect();
-    secret.shuffle(&mut thread_rng());
+    secret.shuffle(&mut rand::rng());
 
     let shmap_enc = Shmap::new_with_encryption(&secret.try_into().unwrap());
     let key = rand_string(33);
@@ -131,14 +132,14 @@ fn test_bad_key() {
     let value = rand_string(50);
 
     let mut secret: Vec<u8> = (0..32).collect();
-    secret.shuffle(&mut thread_rng());
+    secret.shuffle(&mut rand::rng());
     let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
     shmap.insert(&key, value.clone()).unwrap();
     let ret_value: String = shmap.get(&key).unwrap().unwrap();
     assert_eq!(ret_value, value);
 
     let mut secret: Vec<u8> = (0..32).collect();
-    secret.shuffle(&mut thread_rng());
+    secret.shuffle(&mut rand::rng());
     let shmap = Shmap::new_with_encryption(&secret.try_into().unwrap());
     assert!(
         shmap.get::<String>(&key).is_err(),

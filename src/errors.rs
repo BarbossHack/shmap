@@ -1,6 +1,4 @@
-use thiserror::Error;
-
-#[derive(Debug, Error)]
+#[derive(thiserror::Error, Debug)]
 pub enum ShmapError {
     #[error("shm file not found")]
     ShmFileNotFound,

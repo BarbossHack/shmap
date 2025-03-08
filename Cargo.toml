@@ -2,31 +2,32 @@
 authors = ["BarbossHack <barbossh4ck@protonmail.com>"]
 categories = ["database-implementations", "concurrency", "data-structures", "caching"]
 description = "A key-value store based on linux shared-memory files (shm) for persisting state across program restarts."
-edition = "2021"
+edition = "2024"
 homepage = "https://github.com/BarbossHack/shmap"
 keywords = ["shm", "shared-memory", "inter-process", "store", "ramfs"]
 license = "MIT OR Apache-2.0"
 name = "shmap"
 readme = "README.md"
 repository = "https://github.com/BarbossHack/shmap"
+rust-version = "1.85.0"
 version = "0.4.7"
 
 [dependencies]
-aes-gcm = { version = "0.10", features = ["std"] }
+aes-gcm = { version = "0.10.3", features = ["std"] }
 bincode = { version = "=2.0.0-rc.3", default-features = false, features = ["std", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-fdlimit = "0.3"
-libc = "0.2"
-log = "0.4"
-memmap2 = "0.9"
-named-lock = "0.4"
-rand = "0.8"
-serde = { version = "1.0", features = ["serde_derive"] }
-sha2 = "0.10"
-thiserror = "1.0"
+chrono = { version = "0.4.40", features = ["serde"] }
+fdlimit = "0.3.0"
+libc = "0.2.170"
+log = "0.4.26"
+memmap2 = "0.9.5"
+named-lock = "0.4.1"
+rand = "0.9.0"
+serde = { version = "1.0.218", features = ["serde_derive"] }
+sha2 = "0.10.8"
+thiserror = "2.0.12"
 
 [dev-dependencies]
-env_logger = "0.11"
+env_logger = "0.11.6"
 
 [lints.clippy]
 missing_errors_doc = "allow"
