@@ -14,7 +14,7 @@ version = "0.4.7"
 
 [dependencies]
 aes-gcm = { version = "0.10.3", features = ["std"] }
-bincode = { version = "=2.0.0-rc.3", default-features = false, features = ["std", "serde"] }
+bincode = { version = "2.0.0", default-features = false, features = ["std", "serde"] }
 chrono = { version = "0.4.40", features = ["serde"] }
 fdlimit = "0.3.0"
 libc = "0.2.170"
