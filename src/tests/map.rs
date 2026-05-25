@@ -2,8 +2,9 @@ use crate::shm;
 use crate::{Shmap, map::sanitize_key};
 use log::LevelFilter;
 use memmap2::Mmap;
+use rand::RngExt;
 use rand::distr::Alphanumeric;
-use rand::{Rng, prelude::SliceRandom};
+use rand::prelude::SliceRandom;
 use std::io::Write;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
@@ -255,7 +256,7 @@ fn test_many_fd() {
             rlim_cur: 42,
             rlim_max: 42,
         };
-        if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) != 0 {
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &raw const rlim) != 0 {
             let err = std::io::Error::last_os_error();
             panic!("raise_fd_limit: error calling setrlimit: {err}");
         }
@@ -376,7 +377,9 @@ fn test_metadatas_concurrency() {
     for _i in 0..10 {
         handles.push(std::thread::spawn(task.clone()));
     }
-    handles.into_iter().for_each(|t| t.join().unwrap());
+    for t in handles {
+        t.join().unwrap();
+    }
 }
 
 // test key listing

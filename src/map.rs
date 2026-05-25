@@ -62,7 +62,7 @@ impl Shmap {
 
         let shmap = Self { cipher };
         if let Err(e) = shmap.clean() {
-            warn!("Error while cleaning shmap keys: {}", e);
+            warn!("Error while cleaning shmap keys: {e}");
         }
         shmap
     }
@@ -144,9 +144,9 @@ impl Shmap {
         };
         // SAFETY: Mmap call is unsafe
         let mmap = unsafe { Mmap::map(fd) }?;
-        if mmap.len() == 0 {
+        if mmap.is_empty() {
             // If the value is empty, remove it and return None
-            error!("mmap file for item <{}> is empty, removing", sanitized_key);
+            error!("mmap file for item <{sanitized_key}> is empty, removing");
             drop(guard);
             let _ = self.remove_internal(sanitized_key);
             return Ok(None);
@@ -158,8 +158,7 @@ impl Shmap {
             // otherwise it's not a valid nonce.
             if mmap.len() < 12 {
                 warn!(
-                    "mmap len for item <{}> is lower than nonce size, maybe corrupted",
-                    sanitized_key
+                    "mmap len for item <{sanitized_key}> is lower than nonce size, maybe corrupted"
                 );
                 return Ok(None);
             }
@@ -388,7 +387,7 @@ impl Shmap {
 pub fn sanitize_key(key: &str) -> String {
     let mut hasher = Sha224::new();
     hasher.update(key);
-    format!("{}.{:x}", SHMAP_PREFIX, hasher.finalize())
+    format!("{}.{}", SHMAP_PREFIX, hex::encode(hasher.finalize()))
 }
 
 fn sanitize_metadata_key(key: &str) -> String {

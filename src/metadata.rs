@@ -1,7 +1,6 @@
+use crate::ShmapError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-
-use crate::ShmapError;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Metadata {
