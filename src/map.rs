@@ -5,15 +5,17 @@ use crate::{
 };
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, generic_array::GenericArray},
+    aead::{Aead, Generate},
 };
 use chrono::Utc;
 use log::{error, warn};
 use memmap2::{Mmap, MmapMut};
 use named_lock::NamedLock;
-use rand::seq::SliceRandom;
 use serde::{Serialize, de::DeserializeOwned};
-use sha2::{Digest, Sha224};
+use sha2::{
+    Digest, Sha224,
+    digest::{consts::U12, typenum::ToInt},
+};
 use std::{
     fs,
     path::PathBuf,
@@ -55,10 +57,7 @@ impl Shmap {
         }
 
         // If an encryption key was provided, create a `cipher` for AES256-GCM
-        let cipher = encryption_key.map(|key| {
-            let key = GenericArray::from_slice(key);
-            Aes256Gcm::new(key)
-        });
+        let cipher = encryption_key.map(|key| Aes256Gcm::new(key.into()));
 
         let shmap = Self { cipher };
         if let Err(e) = shmap.clean() {
@@ -156,14 +155,14 @@ impl Shmap {
         let bytes = if let Some(cipher) = &self.cipher {
             // Check length of data - must be at least 12 bytes for nonce
             // otherwise it's not a valid nonce.
-            if mmap.len() < 12 {
+            if mmap.len() < U12::INT {
                 warn!(
                     "mmap len for item <{sanitized_key}> is lower than nonce size, maybe corrupted"
                 );
                 return Ok(None);
             }
-            let nonce = Nonce::from_slice(&mmap[..12]);
-            cipher.decrypt(nonce, &mmap[12..])?
+            let nonce = Nonce::try_from(&mmap[..U12::INT])?;
+            cipher.decrypt(&nonce, &mmap[U12::INT..])?
         } else {
             mmap.to_vec()
         };
@@ -224,11 +223,11 @@ impl Shmap {
     fn insert_internal(&self, sanitized_key: &str, value: &[u8]) -> Result<(), ShmapError> {
         // If an encryption key was provided, encrypt the value
         let bytes = if let Some(cipher) = &self.cipher {
-            let mut nonce: Vec<u8> = vec![0; 12];
-            nonce.shuffle(&mut rand::rng());
-            let mut ciphertext = cipher.encrypt(Nonce::from_slice(&nonce), value)?;
-            nonce.append(&mut ciphertext);
-            nonce
+            let nonce = Nonce::generate();
+            let mut bytes = nonce.to_vec();
+            let mut ciphertext = cipher.encrypt(&nonce, value)?;
+            bytes.append(&mut ciphertext);
+            bytes
         } else {
             value.to_vec()
         };

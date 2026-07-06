@@ -23,4 +23,10 @@ pub enum ShmapError {
 
     #[error("AesGcmError: {}", _0)]
     AesGcmError(#[from] aes_gcm::Error),
+
+    #[error("TryFromSliceError: {}", _0)]
+    TryFromSliceError(#[from] std::array::TryFromSliceError),
+
+    #[error("InfallibleError: {}", _0)]
+    InfallibleError(#[from] std::convert::Infallible),
 }
